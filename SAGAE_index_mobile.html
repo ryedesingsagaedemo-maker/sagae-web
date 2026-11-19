@@ -1545,6 +1545,14 @@ async function _completarLoginExitosoMobile_(resp, usernameIngresado, err){
     volverLoginPassword();
     return;
   }
+  if(resp.enrolar2FA){
+    // 2FA obligatorio sin activar: esta app no la activa; se hace una vez desde el programa web.
+    apiPostAsync(null,'cerrar_sesion',{_sessionToken:resp.token}).catch(()=>{});
+    err.textContent="Tu escuela exige la verificación en dos pasos. Actívala una sola vez entrando a sagae.ryedesign.app (desde este teléfono o una computadora) con tu usuario; te guiará. Luego vuelve a entrar aquí.";
+    err.style.display="block";
+    volverLoginPassword();
+    return;
+  }
   session={username:resp.username, nombre:resp.nombre, rol:resp.rol, token:resp.token};
   _descartarCacheDeOtroUsuario(); // v2.9: nunca mostrar datos del usuario anterior de este celular
   mostrarBotonEscaner();
@@ -2911,7 +2919,7 @@ window.addEventListener("offline",()=>{
   setSyncStatus(false);
 });
 if("serviceWorker" in navigator){
-  navigator.serviceWorker.register("sw.js?v=3.7").then(reg=>{
+  navigator.serviceWorker.register("sw.js?v=3.8").then(reg=>{
     console.log("[SAGAE] SW registrado v3.5:", reg.scope);
     reg.addEventListener("updatefound", ()=>{
       const newWorker = reg.installing;

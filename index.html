@@ -787,7 +787,33 @@ tbody tr.clickable{cursor:pointer;}
 
 </style>
   <!-- CÓDIGOS DE BARRA — JsBarcode (Code128) + QRCode.js -->
-  <script src="vendor/JsBarcode.all.min.js"></script>
+  <!-- 2FA OBLIGATORIO: pantalla que aparece cuando la escuela exige la verificación en dos pasos y la persona aún no la tiene -->
+<div id="enrolar-2fa" style="display:none;position:fixed;inset:0;background:rgba(11,27,48,.97);z-index:99999;align-items:center;justify-content:center;padding:16px;overflow:auto">
+  <div style="background:#fff;border-radius:14px;max-width:440px;width:100%;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.4)">
+    <div style="font-size:30px;text-align:center">🔐</div>
+    <h2 style="margin:6px 0 8px;font-size:18px;text-align:center;color:#0B1B30">Activa la verificación en dos pasos</h2>
+    <div id="enr2fa-paso1">
+      <p style="font-size:12.5px;color:#475569;margin:0 0 12px;text-align:center">Tu escuela exige este paso extra para proteger los datos. Solo se hace una vez y toma 2 minutos.</p>
+      <div style="font-size:12px;color:#334155;margin-bottom:6px"><b>1.</b> Instala <b>Google Authenticator</b>, <b>Microsoft Authenticator</b> o <b>Authy</b> en tu teléfono.</div>
+      <div style="font-size:12px;color:#334155;margin-bottom:8px"><b>2.</b> Escanea este código con la app (o ábrelo directo si estás en el mismo teléfono):</div>
+      <div id="enr2fa-qr" style="display:flex;justify-content:center;margin:8px 0"></div>
+      <div id="enr2fa-link" style="text-align:center;margin-bottom:8px"></div>
+      <div style="font-size:11px;color:#64748b;text-align:center;margin-bottom:12px">¿No puedes escanear? Escribe esta clave en la app:<br><strong id="enr2fa-secret" style="font-family:monospace;letter-spacing:1px;font-size:13px;color:#0B1B30"></strong></div>
+      <div style="font-size:12px;color:#334155;margin-bottom:6px"><b>3.</b> Escribe el código de 6 dígitos que muestra la app:</div>
+      <div style="text-align:center"><input id="enr2fa-codigo" maxlength="6" inputmode="numeric" autocomplete="one-time-code" placeholder="000000" style="letter-spacing:4px;font-size:20px;text-align:center;width:180px;padding:8px;border:1.5px solid #cbd5e1;border-radius:8px"></div>
+      <div id="enr2fa-err" style="display:none;color:#b91c1c;font-size:12px;text-align:center;margin-top:8px"></div>
+      <div style="display:flex;gap:8px;justify-content:center;margin-top:14px">
+        <button class="btn" onclick="enr2faSalir()">Cerrar sesión</button>
+        <button class="btn btn-p" onclick="enr2faConfirmar()">Activar</button>
+      </div>
+    </div>
+    <div id="enr2fa-ok" style="display:none;text-align:center">
+      <p style="font-size:13px;color:#166534;margin:10px 0 14px"><b>✅ Verificación en dos pasos activada.</b><br>Ahora entra de nuevo: se te pedirá el código de tu app.</p>
+      <button class="btn btn-p" onclick="location.reload()">Ir a iniciar sesión</button>
+    </div>
+  </div>
+</div>
+<script src="vendor/JsBarcode.all.min.js"></script>
   <!-- QR — solo para mostrar el código de activación de la verificación en dos pasos -->
   <script src="vendor/qrcode.js"></script>
   <!-- Seguridad: XSS prevention via HTML sanitization -->
@@ -3324,6 +3350,9 @@ function volverLoginPassword(){
 async function _completarLoginExitoso_(resp, err){
   session={username:resp.username, nombre:resp.nombre, rol:resp.rol, token:resp.token};
 
+  // 2FA obligatorio: la sesión es restringida; solo sirve para activar la verificación en dos pasos.
+  if(resp.enrolar2FA){ _mostrarEnrolar2FA(); return; }
+
   document.getElementById('loading-overlay').style.display='flex';
   document.getElementById('login-screen').style.display='none';
   const cargado = await loadFromSheets();
@@ -3695,6 +3724,43 @@ async function confirmarActivacion2FA(){
   }
 }
 
+// ── 2FA OBLIGATORIO: activación forzada tras el login (sesión restringida del servidor) ──
+let _enr2fa = null;
+async function _mostrarEnrolar2FA(){
+  document.getElementById('login-screen').style.display='none';
+  document.getElementById('loading-overlay').style.display='none';
+  const ov=document.getElementById('enrolar-2fa'); ov.style.display='flex';
+  const err=document.getElementById('enr2fa-err'); err.style.display='none';
+  const resp = await apiPostAsync(null,'totp_generar',{});
+  if(!resp || !resp.ok || !resp.secret){ err.textContent='No se pudo preparar el código. Cierra sesión e intenta de nuevo.'; err.style.display='block'; return; }
+  _enr2fa = { secret: resp.secret };
+  document.getElementById('enr2fa-secret').textContent = resp.secret;
+  const qr=document.getElementById('enr2fa-qr'); qr.innerHTML='';
+  if(typeof QRCode !== 'undefined'){ new QRCode(qr, {text: resp.otpauthUrl, width:160, height:160}); }
+  const a=document.getElementById('enr2fa-link'); a.innerHTML='';
+  if(/^otpauth:\/\/totp\//.test(resp.otpauthUrl||'')){
+    const l=document.createElement('a'); l.href=resp.otpauthUrl; l.textContent='Abrir en mi app de verificación'; l.style.cssText='font-size:12px;color:#1f3a63'; a.appendChild(l);
+  }
+  setTimeout(()=>document.getElementById('enr2fa-codigo')?.focus(),100);
+}
+async function enr2faConfirmar(){
+  const err=document.getElementById('enr2fa-err'); err.style.display='none';
+  const codigo=document.getElementById('enr2fa-codigo').value.trim();
+  if(!/^[0-9]{6}$/.test(codigo) || !_enr2fa){ err.textContent='Escribe el código de 6 dígitos.'; err.style.display='block'; return; }
+  const resp = await apiPostAsync(null,'totp_activar',{secret:_enr2fa.secret, codigo});
+  if(resp && resp.ok){
+    _enr2fa=null; session=null;
+    document.getElementById('enr2fa-paso1').style.display='none';
+    document.getElementById('enr2fa-ok').style.display='block';
+  }else{
+    err.textContent='El código no coincide. Revisa la hora de tu teléfono e intenta de nuevo.'; err.style.display='block';
+  }
+}
+function enr2faSalir(){
+  try{ if(session&&session.token) apiPostAsync(null,'cerrar_sesion',{_sessionToken:session.token}).catch(()=>{}); }catch(e){}
+  setTimeout(()=>location.reload(),300);
+}
+
 async function desactivar2FA(){
   if(!confirm('¿Desactivar la verificación en dos pasos? A partir de ahora, tu contraseña sola volverá a ser suficiente para entrar.')) return;
   const resp = await apiPostAsync(null,'totp_desactivar',{});
@@ -3704,7 +3770,7 @@ async function desactivar2FA(){
     showToast('Verificación en dos pasos desactivada','');
     _render2FASeccion_(false);
   }else{
-    showToast('⚠ No se pudo desactivar. Intenta de nuevo.','error');
+    showToast('⚠ '+((resp&&resp.message)?resp.message:'No se pudo desactivar. Intenta de nuevo.'),'error');
   }
 }
 let _2faPendiente = null;
