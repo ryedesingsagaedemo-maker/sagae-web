@@ -232,6 +232,7 @@ html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFo
 #update-banner button{background:#C9A84C;color:#1B3A6B;border:none;border-radius:6px;padding:5px 14px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;}
 @keyframes slideDown{from{transform:translateY(-100%)}to{transform:translateY(0)}}
 </style>
+<script src="config.js"></script>
 <script src="vendor/html5-qrcode.min.js"></script>
 <!-- Seguridad: XSS prevention via HTML sanitization -->
 <script src="vendor/purify.min.js"></script>
@@ -688,8 +689,8 @@ function _intentarCerrarModalMobile_(modalSheetId, fnCerrar){
   }
   fnCerrar();
 }
-const API = "https://script.google.com/macros/s/AKfycbxSA74xU_zCdMuS6GFwbwWcYwW0JxyzlPgb08TWaJPyu8AxthZVzuY9tYbwK6oXxFPU/exec";
-const API_TOKEN = "SAGAE-7F2A9C41E8B6D053A1C4F9082EB37A65"; // gate mínimo — la autorización real es la sesión
+const API=(window.SAGAE_CONFIG&&window.SAGAE_CONFIG.API)||"https://script.google.com/macros/s/AKfycbxSA74xU_zCdMuS6GFwbwWcYwW0JxyzlPgb08TWaJPyu8AxthZVzuY9tYbwK6oXxFPU/exec";
+const API_TOKEN=(window.SAGAE_CONFIG&&window.SAGAE_CONFIG.API_TOKEN)||"SAGAE-7F2A9C41E8B6D053A1C4F9082EB37A65"; // gate mínimo — la autorización real es la sesión
 const CACHE_KEY = "sagae_mobile_cache";
 const TIPO_ICON = {
   Computadora:"🖥️", Laptop:"💻", Tablet:"📱", Móvil:"📱", Monitor:"🖥️",
@@ -2919,7 +2920,7 @@ window.addEventListener("offline",()=>{
   setSyncStatus(false);
 });
 if("serviceWorker" in navigator){
-  navigator.serviceWorker.register("sw.js?v=3.8").then(reg=>{
+  navigator.serviceWorker.register("sw.js?v=3.9").then(reg=>{
     console.log("[SAGAE] SW registrado v3.5:", reg.scope);
     reg.addEventListener("updatefound", ()=>{
       const newWorker = reg.installing;

@@ -90,6 +90,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;ba
 @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.3;}}
 </style>
 <!-- Seguridad: XSS prevention via HTML sanitization -->
+<script src="config.js"></script>
 <script src="vendor/purify.min.js"></script>
 </head>
 <body>
@@ -277,8 +278,8 @@ function checkReportLimit(){
   if(_reportLimiter.count>=3){const mins=Math.ceil((_reportLimiter.resetTime-now)/60000);return`⛔ Máximo 3 reportes por sesión. Espera ${mins} min antes de enviar otro.`;}
   _reportLimiter.count++;_saveLimit();return null;
 }
-const API="https://script.google.com/macros/s/AKfycbxSA74xU_zCdMuS6GFwbwWcYwW0JxyzlPgb08TWaJPyu8AxthZVzuY9tYbwK6oXxFPU/exec"
-const API_TOKEN="SAGAE-7F2A9C41E8B6D053A1C4F9082EB37A65";
+const API=(window.SAGAE_CONFIG&&window.SAGAE_CONFIG.API)||"https://script.google.com/macros/s/AKfycbxSA74xU_zCdMuS6GFwbwWcYwW0JxyzlPgb08TWaJPyu8AxthZVzuY9tYbwK6oXxFPU/exec"
+const API_TOKEN=(window.SAGAE_CONFIG&&window.SAGAE_CONFIG.API_TOKEN)||"SAGAE-7F2A9C41E8B6D053A1C4F9082EB37A65";
 // ── reCAPTCHA v3 (anti-bot del portal público) ──────────────────────────
 // Dejar vacío = desactivado (el portal funciona igual que antes). Para activarlo, pegar aquí la
 // CLAVE DE SITIO (pública) de https://www.google.com/recaptcha/admin y guardar la CLAVE SECRETA
