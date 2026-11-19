@@ -1,11 +1,11 @@
 // ════════════════════════════════════════════════════════════════════
-// SAGAE — Service Worker v3.6
+// SAGAE — Service Worker v3.7
 // Sistema de Activos y Gestión Administrativa Educativa
 // Desarrollado por RYE Design
 // ════════════════════════════════════════════════════════════════════
 
-const CACHE_NAME   = 'sagae-mobile-v3.6';
-const CACHE_STATIC = 'sagae-static-v3.6';
+const CACHE_NAME   = 'sagae-mobile-v3.7';
+const CACHE_STATIC = 'sagae-static-v3.7';
 
 // Recursos a cachear para funcionamiento offline
 // (Corrección histórica v1.7: antes apuntaba a index.html —panel de
@@ -109,7 +109,7 @@ const CACHE_STATIC = 'sagae-static-v3.6';
 // v3.4: ARREGLOS DE REVISION — al crear un ticket cuyo guardado tarda en confirmarse, la pantalla
 //   comprueba sola si se creo (evita duplicados); el Aviso de Privacidad tambien abre sin conexion.
 //   Se sube el numero de cache para que todos los telefonos reciban la version nueva automaticamente.
-// v3.6: SEGURIDAD — los identificadores de cada solicitud al servidor ahora son impredecibles
+// v3.7: SEGURIDAD — los identificadores de cada solicitud al servidor ahora son impredecibles
 //   (antes se generaban con Math.random). Se sube el numero de cache para que todos los telefonos
 //   reciban la version nueva automaticamente.
 const STATIC_ASSETS = [
@@ -119,7 +119,9 @@ const STATIC_ASSETS = [
   './icons/icon-192.png',
   './icons/icon-512.png',
   './logo/sagae-simbolo.png',
-  './logo/sagae-simbolo-blanco.png'
+  './logo/sagae-simbolo-blanco.png',
+  './vendor/purify.min.js',
+  './vendor/html5-qrcode.min.js'
 ];
 
 // Recursos OPCIONALES: se guardan uno por uno y, si alguno falta, no se pierde el resto
@@ -130,7 +132,7 @@ const OPTIONAL_ASSETS = [
 
 // ── INSTALL — cachear recursos estáticos ─────────────────────────
 self.addEventListener('install', event => {
-  console.log('[SAGAE SW] Instalando v3.6...');
+  console.log('[SAGAE SW] Instalando v3.7...');
   event.waitUntil(
     caches.open(CACHE_STATIC).then(cache => {
       return cache.addAll(STATIC_ASSETS).catch(err => {
@@ -147,7 +149,7 @@ self.addEventListener('install', event => {
 
 // ── ACTIVATE — limpiar caches viejos ─────────────────────────────
 self.addEventListener('activate', event => {
-  console.log('[SAGAE SW] Activando v3.6...');
+  console.log('[SAGAE SW] Activando v3.7...');
   event.waitUntil(
     caches.keys().then(cacheNames => {
       return Promise.all(
@@ -270,4 +272,4 @@ self.addEventListener('message', event => {
   }
 });
 
-console.log('[SAGAE SW] Service Worker v3.6 cargado correctamente');
+console.log('[SAGAE SW] Service Worker v3.7 cargado correctamente');

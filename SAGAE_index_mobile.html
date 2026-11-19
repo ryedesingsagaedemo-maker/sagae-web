@@ -1,7 +1,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; connect-src 'self' https://script.google.com https://script.googleusercontent.com;">
   <meta http-equiv="X-Content-Type-Options" content="nosniff">
   <meta name="referrer" content="strict-origin-when-cross-origin">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -232,9 +232,9 @@ html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFo
 #update-banner button{background:#C9A84C;color:#1B3A6B;border:none;border-radius:6px;padding:5px 14px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;}
 @keyframes slideDown{from{transform:translateY(-100%)}to{transform:translateY(0)}}
 </style>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+<script src="vendor/html5-qrcode.min.js"></script>
 <!-- Seguridad: XSS prevention via HTML sanitization -->
-<script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
+<script src="vendor/purify.min.js"></script>
 </head>
 <body>
 <div id="update-banner">🔄 Nueva versión disponible<button onclick="aplicarActualizacion()">Actualizar ahora</button></div>
@@ -2911,7 +2911,7 @@ window.addEventListener("offline",()=>{
   setSyncStatus(false);
 });
 if("serviceWorker" in navigator){
-  navigator.serviceWorker.register("sw.js?v=3.6").then(reg=>{
+  navigator.serviceWorker.register("sw.js?v=3.7").then(reg=>{
     console.log("[SAGAE] SW registrado v3.5:", reg.scope);
     reg.addEventListener("updatefound", ()=>{
       const newWorker = reg.installing;
