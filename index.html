@@ -2282,7 +2282,7 @@ tbody tr.clickable{cursor:pointer;}
     <div class="f-row"><div class="f-lbl">Rol *</div><select class="f-inp f-sel" id="eu-rol"><option value="admin">Administrador</option><option value="tecnico">Técnico</option><option value="consultor">Consultor</option><option value="inventario">Inventario</option></select></div>
   </div>
   <div class="f-row"><div class="f-lbl">Contraseña *</div>
-    <div class="pass-wrap"><input class="f-inp" type="password" id="eu-pass" placeholder="Mínimo 6 caracteres" autocomplete="new-password">
+    <div class="pass-wrap"><input class="f-inp" type="password" id="eu-pass" placeholder="Mínimo 10 caracteres" autocomplete="new-password">
     <button class="pass-toggle" onclick="togglePass('eu-pass',this)" type="button">👁</button></div>
   </div>
   <div class="f-2">
@@ -2703,6 +2703,25 @@ async function _completarHistorialTicket(t){
   return true;
 }
 
+// ── POLÍTICA DE CONTRASEÑAS (misma regla que el servidor; el servidor es la autoridad) ──
+// 10 a 128 caracteres; no solo números; al menos 5 caracteres distintos; no una palabra común
+// (con o sin números al final); no contener el nombre de usuario. Devuelve '' si cumple.
+const _PW_COMUNES=['password','passw0rd','contrasena','clave','claves','qwerty','qwertyuiop','asdfghjkl','abcdefgh','abcdefghij','admin','administrador','administrator','sagae','sagae2026','ryedesign','rye','escuela','colegio','tecnico','soporte','panama','bienvenido','bienvenida','welcome','letmein','iloveyou','secreto','usuario','cambiame','cambiar','temporal','temporalpass'];
+function _pwNorm(t){ return String(t==null?'':t).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(); }
+function politicaPasswordError(p, username){
+  const MSG='La contraseña debe tener al menos 10 caracteres, no ser solo números, no ser una palabra común (como «password» o «sagae») ni contener el nombre de usuario.';
+  p=String(p==null?'':p);
+  if(p.length<10) return MSG;
+  if(p.length>128) return 'La contraseña no puede pasar de 128 caracteres.';
+  if(/^[0-9\s]+$/.test(p)) return MSG;
+  if(new Set(p.split('')).size<5) return MSG;
+  const n=_pwNorm(p).replace(/[^a-z0-9]/g,'');
+  const raiz=n.replace(/[0-9]+$/,'').replace(/^[0-9]+/,'');
+  if(_PW_COMUNES.indexOf(n)>=0||_PW_COMUNES.indexOf(raiz)>=0) return MSG;
+  const u=_pwNorm(username).replace(/[^a-z0-9]/g,'');
+  if(u.length>=4&&n.indexOf(u)>=0) return MSG;
+  return '';
+}
 function _generarRequestId(){
   return 'r'+Date.now().toString(36)+_aleatorioHex(12);
 }
@@ -3462,7 +3481,7 @@ function openUsuario(id){
     document.getElementById('eu-2fa-reset-wrap').style.display = (u.totpEnabled===true||u.totpEnabled==='true'||u.totpEnabled==='TRUE') ? 'block' : 'none';
   }else{
     ['eu-username','eu-pass','eu-nombre','eu-email','eu-tel','eu-depto','eu-cargo'].forEach(i=>document.getElementById(i).value='');
-    document.getElementById('eu-username').disabled=false;document.getElementById('eu-pass').placeholder='Mínimo 6 caracteres';
+    document.getElementById('eu-username').disabled=false;document.getElementById('eu-pass').placeholder='Mínimo 10 caracteres';
     document.getElementById('eu-rol').value='tecnico';document.getElementById('eu-estado').value='activo';
     document.getElementById('eu-2fa-reset-wrap').style.display='none';
   }
@@ -3493,7 +3512,7 @@ async function saveUsuario(){
   if(!username){alert('El nombre de usuario es obligatorio.');return;}
   if(!nombre){alert('El nombre completo es obligatorio.');return;}
   if(!isEdit&&!pass){alert('La contraseña es obligatoria para nuevos usuarios.');return;}
-  if(pass&&pass.length<6){alert('La contraseña debe tener al menos 6 caracteres.');return;}
+  if(pass){const _pe=politicaPasswordError(pass,username);if(_pe){alert(_pe);return;}}
   if(!isEdit&&usuarios.find(x=>x.username===username)){alert('Ya existe un usuario con ese nombre.');return;}
   const u={username,rol:document.getElementById('eu-rol').value,nombre,email:document.getElementById('eu-email').value.trim(),tel:document.getElementById('eu-tel').value.trim(),depto:document.getElementById('eu-depto').value.trim(),cargo:document.getElementById('eu-cargo').value.trim(),estado:document.getElementById('eu-estado').value};
   // La contraseña viaja en texto plano solo por HTTPS y se hashea en el
@@ -3597,7 +3616,7 @@ async function renderMiPerfil(){
     </div>
     <div><div class="sec-title">Cambiar mi contraseña</div>
       <div class="f-row"><div class="f-lbl">Nueva contraseña</div>
-        <div class="pass-wrap"><input class="f-inp" type="password" id="perfil-pass" placeholder="Mínimo 6 caracteres">
+        <div class="pass-wrap"><input class="f-inp" type="password" id="perfil-pass" placeholder="Mínimo 10 caracteres">
         <button class="pass-toggle" onclick="togglePass('perfil-pass',this)" type="button">👁</button></div>
       </div>
       <div class="f-row"><div class="f-lbl">Confirmar contraseña</div>
@@ -3694,7 +3713,7 @@ let _2faPendiente = null;
 
 async function cambiarMiPass(){
   const p1=document.getElementById('perfil-pass').value,p2=document.getElementById('perfil-pass2').value;
-  if(!p1||p1.length<6){alert('Mínimo 6 caracteres.');return;}
+  {const _pe=politicaPasswordError(p1,session.username);if(!p1||_pe){alert(_pe||'Escribe la nueva contraseña.');return;}}
   if(p1!==p2){alert('Las contraseñas no coinciden.');return;}
   try{await _guardarConfirmado('usuarios','update',{username:session.username,passwordPlano:p1});}catch(e){alert('No se pudo cambiar la contraseña: '+e.message);return;}
   audit('EDITAR','Usuario',session.username,'Cambio de contraseña propio');
@@ -8015,6 +8034,7 @@ function procesarArchivoUsuarios(hojas){
     if(!obj.username) errs.push('username vacío');
     else if(/\s/.test(obj.username)) errs.push('username con espacios');
     if(!obj.pass_temp) errs.push('contraseña vacía');
+    else if(politicaPasswordError(obj.pass_temp,obj.username)) errs.push('la contraseña no cumple la política (mínimo 10 caracteres, no común)');
     if(!obj.rol) errs.push('rol vacío');
     else if(!ROLES.includes(_impNorm(obj.rol))) errs.push(`rol inválido: ${obj.rol}`);
     if(!obj.nombre) errs.push('nombre vacío');

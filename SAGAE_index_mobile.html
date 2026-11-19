@@ -607,7 +607,7 @@ html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFo
     <div class="force-pass-err" id="fp-err"></div>
     <div class="form-group">
       <label class="form-label">Nueva contraseña *</label>
-      <div class="pass-wrap"><input class="form-input" type="password" id="fp-pass1" placeholder="Mínimo 8 caracteres" oninput="checkPassStrength(this.value)"><button class="pass-toggle" onclick="togglePass('fp-pass1',this)" type="button">👁</button></div>
+      <div class="pass-wrap"><input class="form-input" type="password" id="fp-pass1" placeholder="Mínimo 10 caracteres" oninput="checkPassStrength(this.value)"><button class="pass-toggle" onclick="togglePass('fp-pass1',this)" type="button">👁</button></div>
       <div class="strength-bar" id="fp-strength-bar"></div>
       <div class="strength-label" id="fp-strength-label"></div>
     </div>
@@ -1164,6 +1164,25 @@ function _listaVaciaSospechosa(nueva, actual){
 function _aleatorioHex(nBytes){
   try{ const a=new Uint8Array(nBytes); crypto.getRandomValues(a); return Array.from(a,b=>b.toString(16).padStart(2,'0')).join(''); }
   catch(e){ return Math.random().toString(36).slice(2,12)+Math.random().toString(36).slice(2,12); }
+}
+// ── POLÍTICA DE CONTRASEÑAS (misma regla que el servidor; el servidor es la autoridad) ──
+// 10 a 128 caracteres; no solo números; al menos 5 caracteres distintos; no una palabra común
+// (con o sin números al final); no contener el nombre de usuario. Devuelve '' si cumple.
+const _PW_COMUNES=['password','passw0rd','contrasena','clave','claves','qwerty','qwertyuiop','asdfghjkl','abcdefgh','abcdefghij','admin','administrador','administrator','sagae','sagae2026','ryedesign','rye','escuela','colegio','tecnico','soporte','panama','bienvenido','bienvenida','welcome','letmein','iloveyou','secreto','usuario','cambiame','cambiar','temporal','temporalpass'];
+function _pwNorm(t){ return String(t==null?'':t).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(); }
+function politicaPasswordError(p, username){
+  const MSG='La contraseña debe tener al menos 10 caracteres, no ser solo números, no ser una palabra común (como «password» o «sagae») ni contener el nombre de usuario.';
+  p=String(p==null?'':p);
+  if(p.length<10) return MSG;
+  if(p.length>128) return 'La contraseña no puede pasar de 128 caracteres.';
+  if(/^[0-9\s]+$/.test(p)) return MSG;
+  if(new Set(p.split('')).size<5) return MSG;
+  const n=_pwNorm(p).replace(/[^a-z0-9]/g,'');
+  const raiz=n.replace(/[0-9]+$/,'').replace(/^[0-9]+/,'');
+  if(_PW_COMUNES.indexOf(n)>=0||_PW_COMUNES.indexOf(raiz)>=0) return MSG;
+  const u=_pwNorm(username).replace(/[^a-z0-9]/g,'');
+  if(u.length>=4&&n.indexOf(u)>=0) return MSG;
+  return '';
 }
 function _generarRequestId(){
   return 'r'+Date.now().toString(36)+_aleatorioHex(12);
@@ -2842,8 +2861,8 @@ function checkPassStrength(p){
   const lbl=document.getElementById("fp-strength-label");
   if(!bar)return;
   let score=0;
-  if(p.length>=8)score++;
-  if(p.length>=12)score++;
+  if(p.length>=10)score++;
+  if(p.length>=14)score++;
   if(/[A-Z]/.test(p))score++;
   if(/[0-9]/.test(p))score++;
   if(/[^A-Za-z0-9]/.test(p))score++;
@@ -2865,7 +2884,7 @@ async function saveForcePass(){
   const p2=document.getElementById("fp-pass2").value;
   const err=document.getElementById("fp-err");
   err.style.display="none";
-  if(!p1||p1.length<8){err.textContent="La contraseña debe tener mínimo 8 caracteres.";err.style.display="block";return;}
+  {const _pe=politicaPasswordError(p1,session.username);if(!p1||_pe){err.textContent=_pe||"Escribe la nueva contraseña.";err.style.display="block";return;}}
   if(p1!==p2){err.textContent="Las contraseñas no coinciden.";err.style.display="block";return;}
   await apiPost("usuarios","update",{username:session.username, passwordPlano:p1, mustChange:false, ultimoAcceso:ts()});
   await apiPost("auditoria","insert",{ts:ts(),usuario:session.username,nombre:session.nombre,rol:session.rol,accion:"EDITAR",tipo:"Usuario",codigo:session.username,detalle:"Cambio de contraseña forzado al primer acceso — App Móvil"});
@@ -2892,7 +2911,7 @@ window.addEventListener("offline",()=>{
   setSyncStatus(false);
 });
 if("serviceWorker" in navigator){
-  navigator.serviceWorker.register("sw.js?v=3.5").then(reg=>{
+  navigator.serviceWorker.register("sw.js?v=3.6").then(reg=>{
     console.log("[SAGAE] SW registrado v3.5:", reg.scope);
     reg.addEventListener("updatefound", ()=>{
       const newWorker = reg.installing;
