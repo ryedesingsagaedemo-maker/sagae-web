@@ -3384,6 +3384,7 @@ async function _completarLoginExitoso_(resp, err){
   _pollingPanel='dashboard'; iniciarPolling(); _pedirPermisosNotif();
   resetInactivityTimer();
   iniciarControlSesionUnica(); // ahora solo hace session_check periódico
+  if(resp.mustChange===true||resp.mustChange==='true'||resp.mustChange==='TRUE') _forzarCambioPass();
 }
 
 function doLogout(){
@@ -3409,6 +3410,8 @@ function applyPerms(){
   const repEl=document.getElementById('nav-reportes');
   if(repEl) repEl.classList.toggle('locked', session.rol==='inventario');
   document.getElementById('nav-miperfil').style.display='flex';
+  // Respaldo y alertas: solo administrador (el servidor también lo exige)
+  ['backup-admin-bar','alertas-admin-bar'].forEach(i=>{const b=document.getElementById(i);if(b)b.style.display=session.rol==='admin'?'flex':'none';});
 }
 
 function go(panel,el){
@@ -3517,14 +3520,23 @@ function openUsuario(id){
 }
 
 // El admin puede desactivarle la verificación en dos pasos a OTRA
-// persona (por ejemplo si perdió el celular) — es el mismo "update"
-// genérico de usuarios que ya usa el resto del formulario, con estos
-// dos campos. No hace falta que sepa el código de esa persona.
+// persona (por ejemplo si perdió el celular) con la acción propia
+// 'totp_restablecer' (solo admin, se confirma con la respuesta real del
+// servidor). No hace falta que sepa el código de esa persona.
 async function adminResetear2FA(){
   const username = document.getElementById('eu-username').value.trim();
   if(!username) return;
   if(!confirm(`¿Restablecer la verificación en dos pasos de "${username}"? La próxima vez que active esta opción, tendrá que escanear un código nuevo.`)) return;
-  try{ await _guardarConfirmado('usuarios','update',{username, totpEnabled:false, totpSecret:''}); }catch(e){ showToast('⚠ No se pudo restablecer: '+e.message,'error'); return; }
+  let resp;
+  try{ resp = await apiPostAsync(null,'totp_restablecer',{username}); }catch(e){ showToast('⚠ No se pudo restablecer: '+e.message,'error'); return; }
+  if(!resp || resp.ok!==true){
+    const er = resp && resp.error;
+    const msg = er==='FORBIDDEN' ? 'Solo un administrador puede restablecer la verificación en dos pasos.'
+              : er==='NOT_FOUND' ? 'No se encontró ese usuario.'
+              : (resp && resp.message) || er || 'Sin respuesta del servidor. Intenta de nuevo.';
+    showToast('⚠ No se pudo restablecer: '+msg,'error');
+    return;
+  }
   const idx = usuarios.findIndex(x=>x.username===username);
   if(idx>=0) usuarios[idx].totpEnabled=false;
   audit('EDITAR','Usuario',username,`Verificación en dos pasos restablecida por ${session.nombre}`);
@@ -3643,6 +3655,10 @@ async function renderMiPerfil(){
       <div class="det-field"><div class="det-fl">Último acceso</div><div class="det-fv">${_escHtml(u.ultimoAcceso||'—')}</div></div>
     </div>
     <div><div class="sec-title">Cambiar mi contraseña</div>
+      <div class="f-row"><div class="f-lbl">Contraseña actual</div>
+        <div class="pass-wrap"><input class="f-inp" type="password" id="perfil-pass-actual" autocomplete="current-password" placeholder="Tu contraseña de hoy">
+        <button class="pass-toggle" onclick="togglePass('perfil-pass-actual',this)" type="button">👁</button></div>
+      </div>
       <div class="f-row"><div class="f-lbl">Nueva contraseña</div>
         <div class="pass-wrap"><input class="f-inp" type="password" id="perfil-pass" placeholder="Mínimo 10 caracteres">
         <button class="pass-toggle" onclick="togglePass('perfil-pass',this)" type="button">👁</button></div>
@@ -3776,13 +3792,66 @@ async function desactivar2FA(){
 }
 let _2faPendiente = null;
 
+// Cambio de contraseña propio: acción 'cambiar_mi_password' (pide la actual).
+// Devuelve '' si salió bien o el mensaje de error en español.
+function _msgErrCambioPass(resp){
+  const er = resp && resp.error;
+  if(er==='PASSWORD_ACTUAL_INCORRECTA') return 'La contraseña actual no es correcta.';
+  if(er==='PASSWORD_DEBIL') return (resp.message) || 'La nueva contraseña es muy débil.';
+  if(er==='MISMA_PASSWORD') return 'La nueva contraseña debe ser distinta de la actual.';
+  if(er==='BLOCKED') return (resp.message) || 'Demasiados intentos. Espera unos minutos e intenta de nuevo.';
+  if(er==='TIMEOUT'||er==='NETWORK') return (resp.message) || 'No se pudo conectar con el servidor. Intenta de nuevo.';
+  if(er==='SESSION_INVALID') return 'Tu sesión expiró. Vuelve a iniciar sesión.';
+  return (resp && resp.message) || er || 'Sin respuesta del servidor. Intenta de nuevo.';
+}
+async function _enviarCambioPass(actual,p1,p2){
+  if(!actual) return 'Escribe tu contraseña actual.';
+  const _pe=politicaPasswordError(p1,session.username);
+  if(!p1||_pe) return _pe||'Escribe la nueva contraseña.';
+  if(p1!==p2) return 'Las contraseñas no coinciden.';
+  let resp;
+  try{ resp = await apiPostAsync(null,'cambiar_mi_password',{actual, nueva:p1}); }
+  catch(e){ return 'No se pudo cambiar la contraseña: '+e.message; }
+  if(!resp || resp.ok!==true) return _msgErrCambioPass(resp);
+  return '';
+}
 async function cambiarMiPass(){
-  const p1=document.getElementById('perfil-pass').value,p2=document.getElementById('perfil-pass2').value;
-  {const _pe=politicaPasswordError(p1,session.username);if(!p1||_pe){alert(_pe||'Escribe la nueva contraseña.');return;}}
-  if(p1!==p2){alert('Las contraseñas no coinciden.');return;}
-  try{await _guardarConfirmado('usuarios','update',{username:session.username,passwordPlano:p1});}catch(e){alert('No se pudo cambiar la contraseña: '+e.message);return;}
+  const a=document.getElementById('perfil-pass-actual').value,p1=document.getElementById('perfil-pass').value,p2=document.getElementById('perfil-pass2').value;
+  const e=await _enviarCambioPass(a,p1,p2);
+  if(e){alert(e);return;}
   audit('EDITAR','Usuario',session.username,'Cambio de contraseña propio');
-  alert('Contraseña actualizada.');document.getElementById('perfil-pass').value='';document.getElementById('perfil-pass2').value='';
+  alert('Contraseña actualizada.');
+  ['perfil-pass-actual','perfil-pass','perfil-pass2'].forEach(i=>{const el=document.getElementById(i);if(el)el.value='';});
+}
+
+// Cambio obligatorio (el login devolvió mustChange): ventana que no se puede
+// cerrar; reutiliza _enviarCambioPass. Hasta que salga bien no se usa el sistema.
+function _forzarCambioPass(){
+  if(document.getElementById('force-pass-ov')) return;
+  const ov=document.createElement('div');
+  ov.id='force-pass-ov';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.85);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;';
+  ov.innerHTML=`<div style="background:#fff;border-radius:10px;padding:22px;max-width:380px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,.4);">
+    <div style="font-size:16px;font-weight:700;margin-bottom:6px;">Crea tu contraseña nueva</div>
+    <div style="font-size:12px;color:#64748b;margin-bottom:12px;">Tu contraseña es temporal. Debes cambiarla para poder usar el sistema.</div>
+    <input class="f-inp" type="password" id="fp-actual" autocomplete="current-password" placeholder="Contraseña temporal (la actual)" style="margin-bottom:8px;width:100%;">
+    <input class="f-inp" type="password" id="fp-nueva" autocomplete="new-password" placeholder="Nueva contraseña (mínimo 10 caracteres)" style="margin-bottom:8px;width:100%;">
+    <input class="f-inp" type="password" id="fp-nueva2" autocomplete="new-password" placeholder="Repite la nueva contraseña" style="margin-bottom:8px;width:100%;">
+    <div id="fp-err" style="display:none;color:#b91c1c;font-size:12px;margin-bottom:8px;"></div>
+    <button class="btn btn-p" id="fp-btn" style="width:100%;" onclick="_guardarCambioForzado()">Guardar contraseña</button>
+    <button class="btn" style="width:100%;margin-top:8px;" onclick="doLogout();document.getElementById('force-pass-ov')?.remove()">Cerrar sesión</button>
+  </div>`;
+  document.body.appendChild(ov);
+  setTimeout(()=>document.getElementById('fp-actual')?.focus(),50);
+}
+async function _guardarCambioForzado(){
+  const err=document.getElementById('fp-err'),btn=document.getElementById('fp-btn');
+  err.style.display='none'; btn.disabled=true; btn.textContent='Guardando...';
+  const e=await _enviarCambioPass(document.getElementById('fp-actual').value,document.getElementById('fp-nueva').value,document.getElementById('fp-nueva2').value);
+  btn.disabled=false; btn.textContent='Guardar contraseña';
+  if(e){ err.textContent=e; err.style.display='block'; return; }
+  document.getElementById('force-pass-ov')?.remove();
+  showToast('Contraseña actualizada','success');
 }
 
 // Estado que tenía el activo al abrir el formulario. Sirve para distinguir
@@ -10953,24 +11022,30 @@ async function ejecutarBackupManual(){
   if(btn){ btn.disabled=true; btn.textContent='💾 Generando backup...'; }
   if(status) status.textContent = 'Conectando con Google Drive...';
   try{
-    const r = await fetch(API, {
-      method:'POST', mode:'no-cors',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        sheet:'sistema', action:'backup',
-        payload:{_apiToken: API_TOKEN}
-      })
-    });
-    // no-cors no retorna body, pero si no lanzó error significa éxito
-    if(status) status.textContent = '✅ Backup completado — revisa la carpeta SAGAE_Backups en Google Drive';
-    audit('CREAR','Backup','MANUAL','Backup manual ejecutado por '+session.nombre);
-    showToast('✅ Backup guardado en Google Drive','success');
+    const r = await apiPostAsync('sistema','backup',{},120000);
+    if(r && r.ok===true){
+      if(status) status.textContent = '✅ Backup completado — revisa la carpeta SAGAE_Backups en Google Drive';
+      audit('CREAR','Backup','MANUAL','Backup manual ejecutado por '+session.nombre);
+      showToast('✅ Backup guardado en Google Drive','success');
+    }else{
+      const m = _msgErrSistema(r);
+      if(status) status.textContent = '❌ '+m;
+      showToast('⚠ No se pudo generar el backup: '+m,'error');
+    }
   }catch(e){
     if(status) status.textContent = '❌ Error: '+e.message;
-    showToast('Error al generar backup: '+e.message,'');
+    showToast('Error al generar backup: '+e.message,'error');
   }finally{
     if(btn){ btn.disabled=false; btn.textContent='💾 Backup manual ahora'; }
   }
+}
+
+// Mensaje de error legible para las acciones de sistema (respaldo, alertas)
+function _msgErrSistema(r){
+  const er = r && r.error;
+  if(er==='FORBIDDEN') return 'Solo un administrador puede hacer esto.';
+  if(er==='SESSION_INVALID') return 'Tu sesión expiró. Vuelve a iniciar sesión.';
+  return (r && r.message) || er || 'Sin respuesta del servidor. Intenta de nuevo.';
 }
 
 async function instalarTriggerBackup(){
@@ -10978,18 +11053,17 @@ async function instalarTriggerBackup(){
   const status = document.getElementById('backup-status');
   if(btn){ btn.disabled=true; btn.textContent='⏰ Instalando...'; }
   try{
-    await fetch(API, {
-      method:'POST', mode:'no-cors',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        sheet:'sistema', action:'install_backup_trigger',
-        payload:{_apiToken: API_TOKEN}
-      })
-    });
-    if(status) status.textContent = '✅ Backup automático activado — se ejecutará diariamente a las 2am';
-    showToast('✅ Backup automático activado','success');
+    const r = await apiPostAsync('sistema','install_backup_trigger',{},60000);
+    if(r && r.ok===true){
+      if(status) status.textContent = '✅ Backup automático activado — se ejecutará diariamente a las 2am';
+      showToast('✅ Backup automático activado','success');
+    }else{
+      const m = _msgErrSistema(r);
+      if(status) status.textContent = '❌ '+m;
+      showToast('⚠ No se pudo activar el backup automático: '+m,'error');
+    }
   }catch(e){
-    showToast('Error: '+e.message,'');
+    showToast('Error: '+e.message,'error');
   }finally{
     if(btn){ btn.disabled=false; btn.textContent='⏰ Activar backup automático diario'; }
   }
@@ -11002,19 +11076,18 @@ async function ejecutarAlertasManualUI(){
   if(btn){ btn.disabled=true; btn.textContent='Enviando...'; }
   if(status) status.textContent = 'Revisando garantías, licencias y deadlines...';
   try{
-    await fetch(API, {
-      method:'POST', mode:'no-cors',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        sheet:'sistema', action:'run_alertas_ahora',
-        payload:{_apiToken: API_TOKEN}
-      })
-    });
-    if(status) status.textContent = '✅ Revisión ejecutada — se enviaron los correos que correspondían hoy';
-    showToast('✅ Alertas revisadas y enviadas','success');
+    const r = await apiPostAsync('sistema','run_alertas_ahora',{},120000);
+    if(r && r.ok===true){
+      if(status) status.textContent = '✅ Revisión ejecutada — se enviaron los correos que correspondían hoy';
+      showToast('✅ Alertas revisadas y enviadas','success');
+    }else{
+      const m = _msgErrSistema(r);
+      if(status) status.textContent = '❌ '+m;
+      showToast('⚠ No se pudieron enviar las alertas: '+m,'error');
+    }
   }catch(e){
     if(status) status.textContent = '❌ Error: '+e.message;
-    showToast('Error al enviar alertas: '+e.message,'');
+    showToast('Error al enviar alertas: '+e.message,'error');
   }finally{
     if(btn){ btn.disabled=false; btn.textContent='Enviar alertas ahora (prueba)'; }
   }
@@ -11025,18 +11098,17 @@ async function instalarTriggerAlertasUI(){
   const status = document.getElementById('alertas-status');
   if(btn){ btn.disabled=true; btn.textContent='⏰ Instalando...'; }
   try{
-    await fetch(API, {
-      method:'POST', mode:'no-cors',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        sheet:'sistema', action:'install_alertas_trigger',
-        payload:{_apiToken: API_TOKEN}
-      })
-    });
-    if(status) status.textContent = '✅ Alertas automáticas activadas — se revisarán diariamente a las 8:00am (Panamá)';
-    showToast('✅ Alertas automáticas de vencimiento activadas','success');
+    const r = await apiPostAsync('sistema','install_alertas_trigger',{},60000);
+    if(r && r.ok===true){
+      if(status) status.textContent = '✅ Alertas automáticas activadas — se revisarán diariamente a las 8:00am (Panamá)';
+      showToast('✅ Alertas automáticas de vencimiento activadas','success');
+    }else{
+      const m = _msgErrSistema(r);
+      if(status) status.textContent = '❌ '+m;
+      showToast('⚠ No se pudieron activar las alertas automáticas: '+m,'error');
+    }
   }catch(e){
-    showToast('Error: '+e.message,'');
+    showToast('Error: '+e.message,'error');
   }finally{
     if(btn){ btn.disabled=false; btn.textContent='⏰ Activar alertas automáticas diarias'; }
   }

@@ -607,6 +607,10 @@ html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFo
     <div class="force-pass-sub">Esta es tu primera sesión. Debes crear una contraseña personal antes de continuar. No podrás saltarte este paso.</div>
     <div class="force-pass-err" id="fp-err"></div>
     <div class="form-group">
+      <label class="form-label">Contraseña temporal (la actual) *</label>
+      <div class="pass-wrap"><input class="form-input" type="password" id="fp-actual" autocomplete="current-password" placeholder="La contraseña que te dieron"><button class="pass-toggle" onclick="togglePass('fp-actual',this)" type="button">👁</button></div>
+    </div>
+    <div class="form-group">
       <label class="form-label">Nueva contraseña *</label>
       <div class="pass-wrap"><input class="form-input" type="password" id="fp-pass1" placeholder="Mínimo 10 caracteres" oninput="checkPassStrength(this.value)"><button class="pass-toggle" onclick="togglePass('fp-pass1',this)" type="button">👁</button></div>
       <div class="strength-bar" id="fp-strength-bar"></div>
@@ -616,7 +620,7 @@ html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFo
       <label class="form-label">Confirmar contraseña *</label>
       <div class="pass-wrap"><input class="form-input" type="password" id="fp-pass2" placeholder="Repite tu contraseña"><button class="pass-toggle" onclick="togglePass('fp-pass2',this)" type="button">👁</button></div>
     </div>
-    <button class="btn-primary" onclick="saveForcePass()">Guardar mi contraseña</button>
+    <button class="btn-primary" id="fp-btn" onclick="saveForcePass()">Guardar mi contraseña</button>
   </div>
 </div>
 <div class="toast" id="toast"></div>
@@ -2889,13 +2893,34 @@ function checkPassStrength(p){
   lbl.style.color=lvl.color;
 }
 async function saveForcePass(){
+  const actual=document.getElementById("fp-actual").value;
   const p1=document.getElementById("fp-pass1").value;
   const p2=document.getElementById("fp-pass2").value;
   const err=document.getElementById("fp-err");
+  const fpBtn=document.getElementById("fp-btn");
   err.style.display="none";
+  if(!actual){err.textContent="Escribe tu contraseña temporal (la actual).";err.style.display="block";return;}
   {const _pe=politicaPasswordError(p1,session.username);if(!p1||_pe){err.textContent=_pe||"Escribe la nueva contraseña.";err.style.display="block";return;}}
   if(p1!==p2){err.textContent="Las contraseñas no coinciden.";err.style.display="block";return;}
-  await apiPost("usuarios","update",{username:session.username, passwordPlano:p1, mustChange:false, ultimoAcceso:ts()});
+  /* v10: acción propia con sesión; se espera la respuesta REAL del servidor
+     (antes era un envío a ciegas y mostraba éxito aunque fallara). */
+  if(fpBtn){fpBtn.disabled=true;fpBtn.textContent="Guardando...";}
+  let resp;
+  try{ resp=await apiPostAsync(null,"cambiar_mi_password",{actual, nueva:p1}); }
+  catch(e){ resp={ok:false,error:"NETWORK",message:"No se pudo conectar con el servidor. Intenta de nuevo."}; }
+  if(fpBtn){fpBtn.disabled=false;fpBtn.textContent="Guardar mi contraseña";}
+  if(!resp || resp.ok!==true){
+    const er=resp&&resp.error;
+    let m;
+    if(er==="PASSWORD_ACTUAL_INCORRECTA") m="La contraseña temporal no es correcta.";
+    else if(er==="PASSWORD_DEBIL") m=resp.message||"La nueva contraseña es muy débil.";
+    else if(er==="MISMA_PASSWORD") m="La nueva contraseña debe ser distinta de la temporal.";
+    else if(er==="BLOCKED") m=resp.message||"Demasiados intentos. Espera unos minutos e intenta de nuevo.";
+    else if(er==="SESSION_INVALID") m="Tu sesión expiró. Cierra la app e inicia sesión de nuevo.";
+    else m=(resp&&resp.message)||er||"Sin respuesta del servidor. Intenta de nuevo.";
+    err.textContent=m;err.style.display="block";
+    return;
+  }
   await apiPost("auditoria","insert",{ts:ts(),usuario:session.username,nombre:session.nombre,rol:session.rol,accion:"EDITAR",tipo:"Usuario",codigo:session.username,detalle:"Cambio de contraseña forzado al primer acceso — App Móvil"});
   await cargarDatosPostLogin();
   document.getElementById("force-pass-screen").style.display="none";
@@ -2920,8 +2945,8 @@ window.addEventListener("offline",()=>{
   setSyncStatus(false);
 });
 if("serviceWorker" in navigator){
-  navigator.serviceWorker.register("sw.js?v=3.9").then(reg=>{
-    console.log("[SAGAE] SW registrado v3.5:", reg.scope);
+  navigator.serviceWorker.register("sw.js?v=4.0").then(reg=>{
+    console.log("[SAGAE] SW registrado v4.0:", reg.scope);
     reg.addEventListener("updatefound", ()=>{
       const newWorker = reg.installing;
       if(!newWorker) return;

@@ -1,11 +1,11 @@
 // ════════════════════════════════════════════════════════════════════
-// SAGAE — Service Worker v3.9
+// SAGAE — Service Worker v4.0
 // Sistema de Activos y Gestión Administrativa Educativa
 // Desarrollado por RYE Design
 // ════════════════════════════════════════════════════════════════════
 
-const CACHE_NAME   = 'sagae-mobile-v3.9';
-const CACHE_STATIC = 'sagae-static-v3.9';
+const CACHE_NAME   = 'sagae-mobile-v4.0';
+const CACHE_STATIC = 'sagae-static-v4.0';
 
 // Recursos a cachear para funcionamiento offline
 // (Corrección histórica v1.7: antes apuntaba a index.html —panel de
@@ -133,7 +133,7 @@ const OPTIONAL_ASSETS = [
 
 // ── INSTALL — cachear recursos estáticos ─────────────────────────
 self.addEventListener('install', event => {
-  console.log('[SAGAE SW] Instalando v3.9...');
+  console.log('[SAGAE SW] Instalando v4.0...');
   event.waitUntil(
     caches.open(CACHE_STATIC).then(cache => {
       return cache.addAll(STATIC_ASSETS).catch(err => {
@@ -150,7 +150,7 @@ self.addEventListener('install', event => {
 
 // ── ACTIVATE — limpiar caches viejos ─────────────────────────────
 self.addEventListener('activate', event => {
-  console.log('[SAGAE SW] Activando v3.9...');
+  console.log('[SAGAE SW] Activando v4.0...');
   event.waitUntil(
     caches.keys().then(cacheNames => {
       return Promise.all(
@@ -273,4 +273,4 @@ self.addEventListener('message', event => {
   }
 });
 
-console.log('[SAGAE SW] Service Worker v3.9 cargado correctamente');
+console.log('[SAGAE SW] Service Worker v4.0 cargado correctamente');
