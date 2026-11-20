@@ -2686,6 +2686,10 @@ async function apiGet(sheet, intento=1, params=''){
       _sesionExpirada();
       return [];
     }
+    if(d && d.ok===false && d.error==='CAMBIO_PASSWORD_OBLIGATORIO'){
+      _forzarCambioPass(()=>{ loadFromSheets().then(()=>{ try{renderAll();}catch(e){} }); });
+      return [];
+    }
     return Array.isArray(d) ? d : [];
   }
   catch(e){
@@ -2785,6 +2789,7 @@ async function apiPostAsync(sheet, action, payload, timeoutMs=60000){
                             {mode:'cors', signal:AbortSignal.timeout(10000)});
       if(r.ok){
         const d = await r.json();
+        if(d && d.error==='CAMBIO_PASSWORD_OBLIGATORIO' && action!=='cambiar_mi_password') _forzarCambioPass();
         if(d && !d.pending) return d;
       }
     }catch(e){ /* seguir intentando hasta agotar el tiempo */ }
@@ -3357,6 +3362,14 @@ async function _completarLoginExitoso_(resp, err){
   // 2FA obligatorio: la sesión es restringida; solo sirve para activar la verificación en dos pasos.
   if(resp.enrolar2FA){ _mostrarEnrolar2FA(); return; }
 
+  // Contraseña temporal: el servidor deja la sesión restringida, así que NO se carga
+  // nada hasta que el cambio salga bien; entonces se continúa con la carga normal.
+  if(resp.mustChange===true||resp.mustChange==='true'||resp.mustChange==='TRUE'){
+    document.getElementById('login-screen').style.display='none';
+    _forzarCambioPass(()=>{ _completarLoginExitoso_({...resp, mustChange:false}, err); });
+    return;
+  }
+
   document.getElementById('loading-overlay').style.display='flex';
   document.getElementById('login-screen').style.display='none';
   const cargado = await loadFromSheets();
@@ -3387,7 +3400,6 @@ async function _completarLoginExitoso_(resp, err){
   _pollingPanel='dashboard'; iniciarPolling(); _pedirPermisosNotif();
   resetInactivityTimer();
   iniciarControlSesionUnica(); // ahora solo hace session_check periódico
-  if(resp.mustChange===true||resp.mustChange==='true'||resp.mustChange==='TRUE') _forzarCambioPass();
 }
 
 function doLogout(){
@@ -3837,7 +3849,9 @@ async function cambiarMiPass(){
 
 // Cambio obligatorio (el login devolvió mustChange): ventana que no se puede
 // cerrar; reutiliza _enviarCambioPass. Hasta que salga bien no se usa el sistema.
-function _forzarCambioPass(){
+let _forzarCambioPassOk=null;
+function _forzarCambioPass(alExito){
+  if(alExito) _forzarCambioPassOk=alExito;
   if(document.getElementById('force-pass-ov')) return;
   const ov=document.createElement('div');
   ov.id='force-pass-ov';
@@ -3850,10 +3864,14 @@ function _forzarCambioPass(){
     <input class="f-inp" type="password" id="fp-nueva2" autocomplete="new-password" placeholder="Repite la nueva contraseña" style="margin-bottom:8px;width:100%;">
     <div id="fp-err" style="display:none;color:#b91c1c;font-size:12px;margin-bottom:8px;"></div>
     <button class="btn btn-p" id="fp-btn" style="width:100%;" onclick="_guardarCambioForzado()">Guardar contraseña</button>
-    <button class="btn" style="width:100%;margin-top:8px;" onclick="doLogout();document.getElementById('force-pass-ov')?.remove()">Cerrar sesión</button>
+    <button class="btn" style="width:100%;margin-top:8px;" onclick="_forzarSalir()">Cerrar sesión</button>
   </div>`;
   document.body.appendChild(ov);
   setTimeout(()=>document.getElementById('fp-actual')?.focus(),50);
+}
+function _forzarSalir(){
+  try{ if(session&&session.token) apiPostAsync(null,'cerrar_sesion',{_sessionToken:session.token}).catch(()=>{}); }catch(e){}
+  setTimeout(()=>location.reload(),300);
 }
 async function _guardarCambioForzado(){
   const err=document.getElementById('fp-err'),btn=document.getElementById('fp-btn');
@@ -3863,6 +3881,8 @@ async function _guardarCambioForzado(){
   if(e){ err.textContent=e; err.style.display='block'; return; }
   document.getElementById('force-pass-ov')?.remove();
   showToast('Contraseña actualizada','success');
+  const cb=_forzarCambioPassOk; _forzarCambioPassOk=null;
+  if(cb) cb();
 }
 
 // Estado que tenía el activo al abrir el formulario. Sirve para distinguir
@@ -4465,6 +4485,7 @@ function openTicket(id,forceReadOnly){
     document.getElementById('et-prior').value=t.prior||'importante';document.getElementById('et-estado').value=t.estado||'abierto';
     document.getElementById('et-avance').value=t.avance||0;document.getElementById('et-dead').value=t.dead!=='—'?t.dead:'';
     document.getElementById('et-proy').value=t.proy!=='—'?t.proy:'';document.getElementById('et-desc').value=t.desc||'';
+    _etFotosQuitar=[];
     _renderGaleriaFotosAdmin(t.fotos);
     renderTicketHistorial(t);
     if(t._histLigero){
@@ -4479,6 +4500,7 @@ function openTicket(id,forceReadOnly){
   }else{
     ['et-titulo','et-proy','et-desc'].forEach(i=>document.getElementById(i).value=''); document.getElementById('et-resp').value='';
     document.getElementById('et-avance').value=0;document.getElementById('et-estado').value='abierto';document.getElementById('et-dead').value='';document.getElementById('et-prior').value='importante';
+    _etFotosQuitar=[];
     _renderGaleriaFotosAdmin([]);
     document.getElementById('et-hist-wrap').style.display='none';
   }
@@ -4497,6 +4519,7 @@ function openTicket(id,forceReadOnly){
 // GALERÍA DE FOTOS DEL TICKET — hasta 5 fotos, con nota y seguimiento
 // ══════════════════════════════════════════════════════════════════
 let _etFotosActuales = [];
+let _etFotosQuitar = []; // urls que el admin quitó (el servidor exige _fotosQuitar para aceptarlo)
 
 // Una foto individual queda bloqueada (no se puede quitar) si la subió
 // alguien reportando desde el Portal Público — preserva la evidencia
@@ -4530,7 +4553,8 @@ function _renderGaleriaFotosAdmin(fotosRaw){
 
 function quitarFotoTicketAdmin(index){
   if(_fotoEstaBloqueada(_etFotosActuales[index])) return; // defensa extra, el botón ya no debería estar visible
-  _etFotosActuales.splice(index,1);
+  const _q=_etFotosActuales.splice(index,1)[0];
+  if(_q && _q.url) _etFotosQuitar.push(_q.url);
   _renderGaleriaFotosAdmin(_etFotosActuales);
 }
 
@@ -4802,7 +4826,8 @@ async function saveTicket(){
         estado: 'pendiente', color: 'red'
       });
     }
-    const rEdit = await apiPost('tickets','update',t);
+    const rEdit = await apiPost('tickets','update',{...t, _fotosQuitar:_etFotosQuitar.slice()});
+    _etFotosQuitar=[];
     audit('EDITAR','Ticket',t.codigo,det);
     if(rEdit===false){
       showToast('⚠ Sin conexión: los cambios de '+t.codigo+' quedaron en cola y se enviarán solos.','error');
@@ -7805,7 +7830,10 @@ const _MSG_ERR_SERVIDOR={
   HISTORIAL_INVALIDO:'El historial del registro no es válido. Recarga la pantalla e intenta de nuevo.',
   FOTOS_INVALIDAS:'Las fotos no son válidas. Revisa las fotos adjuntas e intenta de nuevo.',
   DEMASIADAS_FOTOS:'Un ticket admite máximo 5 fotos.',
-  RATE_LIMIT:'Demasiadas acciones seguidas. Espera un momento e intenta de nuevo.'
+  RATE_LIMIT:'Demasiadas acciones seguidas. Espera un momento e intenta de nuevo.',
+  CAMBIO_PASSWORD_OBLIGATORIO:'Debes cambiar tu contraseña temporal antes de continuar.',
+  HISTORIAL_GUARDADO_DANADO:'El historial de este registro está dañado; avisa al administrador.',
+  HISTORIAL_LLENO:'El historial de este registro llegó a su límite; avisa al administrador.'
 };
 function _impMotivo(res){
   if(!res) return 'sin respuesta del servidor';

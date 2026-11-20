@@ -621,6 +621,7 @@ html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFo
       <div class="pass-wrap"><input class="form-input" type="password" id="fp-pass2" placeholder="Repite tu contraseña"><button class="pass-toggle" onclick="togglePass('fp-pass2',this)" type="button">👁</button></div>
     </div>
     <button class="btn-primary" id="fp-btn" onclick="saveForcePass()">Guardar mi contraseña</button>
+    <button class="btn-secondary" type="button" style="margin-top:10px;width:100%;" onclick="forzarPassSalir()">Cerrar sesión</button>
   </div>
 </div>
 <div class="toast" id="toast"></div>
@@ -1147,6 +1148,7 @@ async function apiGet(sheet, intento=1){
     if(!r.ok) throw new Error("HTTP "+r.status);
     const d=await r.json();
     if(d && d.ok===false && d.error==='SESSION_INVALID'){ _sesionExpiradaMobile(); return []; }
+    if(d && d.ok===false && d.error==='CAMBIO_PASSWORD_OBLIGATORIO'){ _mostrarForzarPassMobile(); return []; }
     return Array.isArray(d)?d:[];
   }
   catch(e){
@@ -1200,7 +1202,10 @@ const _MSG_ERR_SERVIDOR={
   HISTORIAL_INVALIDO:'El historial del registro no es válido. Recarga la pantalla e intenta de nuevo.',
   FOTOS_INVALIDAS:'Las fotos no son válidas. Revisa las fotos adjuntas e intenta de nuevo.',
   DEMASIADAS_FOTOS:'Un ticket admite máximo 5 fotos.',
-  RATE_LIMIT:'Demasiadas acciones seguidas. Espera un momento e intenta de nuevo.'
+  RATE_LIMIT:'Demasiadas acciones seguidas. Espera un momento e intenta de nuevo.',
+  CAMBIO_PASSWORD_OBLIGATORIO:'Debes cambiar tu contraseña temporal antes de continuar.',
+  HISTORIAL_GUARDADO_DANADO:'El historial de este registro está dañado; avisa al administrador.',
+  HISTORIAL_LLENO:'El historial de este registro llegó a su límite; avisa al administrador.'
 };
 function _msgServidor(res,pordefecto){ return (res&&_MSG_ERR_SERVIDOR[res.error]) || (res&&(res.message||res.error)) || pordefecto || 'sin respuesta'; }
 async function apiPostAsync(sheet, action, payload, timeoutMs=60000){
@@ -1225,6 +1230,7 @@ async function apiPostAsync(sheet, action, payload, timeoutMs=60000){
                             {mode:'cors', signal:AbortSignal.timeout(10000)});
       if(r.ok){
         const d = await r.json();
+        if(d && d.error==='CAMBIO_PASSWORD_OBLIGATORIO' && action!=='cambiar_mi_password') _mostrarForzarPassMobile();
         if(d && typeof d==='object' && !Array.isArray(d) && !d.pending) return d;
       }
     }catch(e){ }
@@ -1241,6 +1247,16 @@ async function cargarNombreInstitucion(){
     const nombre = (d && d.ok && d.nombreInstitucion) ? d.nombreInstitucion : '';
     if(el) el.textContent = nombre;
   }catch(e){ }
+}
+function _mostrarForzarPassMobile(){
+  if(typeof session==='undefined' || !session) return;
+  document.getElementById("login-screen").style.display="none";
+  document.getElementById("app").classList.remove("visible");
+  document.getElementById("force-pass-screen").style.display="flex";
+}
+function forzarPassSalir(){
+  try{ if(session&&session.token) apiPostAsync(null,'cerrar_sesion',{_sessionToken:session.token}).catch(()=>{}); }catch(e){}
+  setTimeout(()=>location.reload(),300);
 }
 function _sesionExpiradaMobile(){
   if(typeof session==='undefined' || !session) return;
@@ -1572,13 +1588,13 @@ async function _completarLoginExitosoMobile_(resp, usernameIngresado, err){
   session={username:resp.username, nombre:resp.nombre, rol:resp.rol, token:resp.token};
   _descartarCacheDeOtroUsuario(); // v2.9: nunca mostrar datos del usuario anterior de este celular
   mostrarBotonEscaner();
-  apiPost("auditoria","insert",{ts:ts(),usuario:usernameIngresado,nombre:resp.nombre,rol:resp.rol,accion:"LOGIN",tipo:"Sistema",codigo:"MOBILE",detalle:"Acceso desde app móvil SAGAE"});
   const mustChange = resp.mustChange===true || resp.mustChange==='true' || resp.mustChange==='TRUE';
   if(mustChange){
     document.getElementById("login-screen").style.display="none";
     document.getElementById("force-pass-screen").style.display="flex";
     return;
   }
+  apiPost("auditoria","insert",{ts:ts(),usuario:usernameIngresado,nombre:resp.nombre,rol:resp.rol,accion:"LOGIN",tipo:"Sistema",codigo:"MOBILE",detalle:"Acceso desde app móvil SAGAE"});
   const btnLogin=document.querySelector(".btn-login");
   const _txtOriginal="Iniciar sesión";
   if(btnLogin){ btnLogin.disabled=true; btnLogin.textContent="Cargando datos..."; }
@@ -1953,6 +1969,7 @@ function closeSheet(){
   document.getElementById("ticket-sheet").classList.remove("open");
 }
 let _mtFotosActuales = [];
+let _mtFotosQuitar = []; // urls que el admin quitó (el servidor exige _fotosQuitar)
 function _fotoEstaBloqueadaMobile(foto){
   return foto && foto.usuario === 'Portal público';
 }
@@ -1980,7 +1997,8 @@ function _renderGaleriaFotosMobile(fotosRaw, readOnly){
 }
 function quitarFotoTicketMobile(index){
   if(_fotoEstaBloqueadaMobile(_mtFotosActuales[index])) return;
-  _mtFotosActuales.splice(index,1);
+  const _q=_mtFotosActuales.splice(index,1)[0];
+  if(_q && _q.url) _mtFotosQuitar.push(_q.url);
   _renderGaleriaFotosMobile(_mtFotosActuales, false);
 }
 let _mmFotosActuales = [];
@@ -2146,6 +2164,7 @@ function quickEstado(codigo){
   document.getElementById("mt-avance-val").textContent=t.avance||0;
   document.getElementById("mt-dead").value=t.dead!=="—"?t.dead||"":"";
   document.getElementById("mt-desc").value=t.desc||"";
+  _mtFotosQuitar=[];
   _renderGaleriaFotosMobile(t.fotos, false);
   _resetMobPiezasTicket();
   _mtLimpiarBloqueRecepcion();
@@ -2170,6 +2189,7 @@ function quickAvance(codigo){
   document.getElementById("mt-avance-val").textContent=t.avance||0;
   document.getElementById("mt-dead").value=t.dead!=="—"?t.dead||"":"";
   document.getElementById("mt-desc").value=t.desc||"";
+  _mtFotosQuitar=[];
   _renderGaleriaFotosMobile(t.fotos, false);
   _resetMobPiezasTicket();
   _mtLimpiarBloqueRecepcion();
@@ -2204,6 +2224,7 @@ function openNuevoTicket(){
   document.getElementById("mt-avance-val").textContent=0;
   document.getElementById("mt-dead").value="";
   document.getElementById("mt-desc").value="";
+  _mtFotosQuitar=[];
   _renderGaleriaFotosMobile([], false);
   _resetMobPiezasTicket();
   _mtLimpiarBloqueRecepcion();
@@ -2239,6 +2260,7 @@ function openEditTicket(codigo){
   document.getElementById("mt-avance-val").textContent=t.avance||0;
   document.getElementById("mt-dead").value=t.dead&&t.dead!=="—"?t.dead:"";
   document.getElementById("mt-desc").value=t.desc||"";
+  _mtFotosQuitar=[];
   _renderGaleriaFotosMobile(t.fotos, false);
   _resetMobPiezasTicket();
   _mtLimpiarBloqueRecepcion();
@@ -2449,7 +2471,8 @@ async function saveTicket(){
     // El pedido de piezas va de ULTIMO: el backend mira el último evento del
     // historial para decidir si manda el correo al encargado de compras.
     if(solicitudPiezas) t.historial.push(solicitudPiezas);
-    await apiPost("tickets","update",t);
+    await apiPost("tickets","update",{...t, _fotosQuitar:_mtFotosQuitar.slice()});
+    _mtFotosQuitar=[];
     if(solicitudPiezas) await _propagarSolicitudPiezasAlActivo(t.activoId, solicitudPiezas);
     // Si el ticket de mantenimiento se cerró, el equipo vuelve a estar disponible.
     const dev = await _devolverEquipoAlCerrarTicket(t, estadoAntes);
@@ -2928,6 +2951,7 @@ async function saveForcePass(){
     else if(er==="MISMA_PASSWORD") m="La nueva contraseña debe ser distinta de la temporal.";
     else if(er==="BLOCKED") m=resp.message||"Demasiados intentos. Espera unos minutos e intenta de nuevo.";
     else if(er==="SESSION_INVALID") m="Tu sesión expiró. Cierra la app e inicia sesión de nuevo.";
+    else if(er==="TIMEOUT"||er==="NETWORK") m=resp.message||"No se pudo conectar con el servidor. Intenta de nuevo.";
     else m=(resp&&resp.message)||er||"Sin respuesta del servidor. Intenta de nuevo.";
     err.textContent=m;err.style.display="block";
     return;
@@ -2941,6 +2965,7 @@ async function saveForcePass(){
   document.getElementById("um-name").textContent=session.nombre;
   document.getElementById("um-role").textContent=session.rol==="admin"?"Administrador":"Técnico";
   renderDashboard();renderTickets();renderActivos();renderReportes();updateBadge();resetInactivityTimer();iniciarControlSesionUnicaMobile();
+  iniciarPollingMobile(); pedirPermisosNotifMobile();
   showToast("¡Contraseña creada exitosamente! ✓","success");
 }
 window.addEventListener("online",()=>{
