@@ -1195,6 +1195,14 @@ function _generarRequestId(){
 function _generarOpId(){
   return 'op'+Date.now().toString(36)+_aleatorioHex(8);
 }
+/* v10: mensajes de errores nuevos del servidor */
+const _MSG_ERR_SERVIDOR={
+  HISTORIAL_INVALIDO:'El historial del registro no es válido. Recarga la pantalla e intenta de nuevo.',
+  FOTOS_INVALIDAS:'Las fotos no son válidas. Revisa las fotos adjuntas e intenta de nuevo.',
+  DEMASIADAS_FOTOS:'Un ticket admite máximo 5 fotos.',
+  RATE_LIMIT:'Demasiadas acciones seguidas. Espera un momento e intenta de nuevo.'
+};
+function _msgServidor(res,pordefecto){ return (res&&_MSG_ERR_SERVIDOR[res.error]) || (res&&(res.message||res.error)) || pordefecto || 'sin respuesta'; }
 async function apiPostAsync(sheet, action, payload, timeoutMs=60000){
   const requestId = _generarRequestId();
   const securePayload = {...(payload||{}), _apiToken: API_TOKEN, _requestId: requestId,
@@ -1522,8 +1530,11 @@ async function verificarLoginTOTP(){
     await _completarLoginExitosoMobile_(resp, resp.username, err);
   }else{
     if(resp && resp.error==='PREAUTH_EXPIRADO'){
-      err.textContent='⏱ Se agotó el tiempo para ingresar el código. Vuelve a iniciar sesión.';
       volverLoginPassword();
+      err.textContent='Demasiados códigos incorrectos. Vuelve a ingresar tu contraseña.';
+    }else if(resp && resp.error==='BLOCKED'){
+      volverLoginPassword();
+      err.textContent='Demasiados intentos. Espera 15 minutos.';
     }else{
       err.textContent='Código incorrecto. Intenta de nuevo.';
     }
@@ -1854,7 +1865,7 @@ async function tomarTicket(codigo, e){
     renderTickets();
     showToast('⚠ '+resultado.takenBy+' tomó este ticket antes que tú.','error');
   } else {
-    showToast('⚠ No se pudo asignar. Verifica la conexión.','error');
+    showToast('⚠ No se pudo asignar. '+(_MSG_ERR_SERVIDOR[resultado.error]||'Verifica la conexión.'),'error');
   }
 }
 function renderTickets(){
@@ -1959,7 +1970,7 @@ function _renderGaleriaFotosMobile(fotosRaw, readOnly){
         ${_escHtml(f.nota?' — '+sanitizeHTML(f.nota):'')}
         <div style="font-size:10px;color:#666;margin-top:2px">${_escHtml(f.fecha||'')}${_escHtml(f.usuario?' · '+sanitizeHTML(f.usuario):'')}</div>
       </div>
-      ${(!readOnly && !bloqueada)?`<button type="button" class="btn-secondary" onclick="quitarFotoTicketMobile(${i})" style="padding:4px 8px;font-size:12px;width:auto;flex:none;">🗑</button>`:''}
+      ${(!readOnly && !bloqueada && session && session.rol==='admin')?`<button type="button" class="btn-secondary" onclick="quitarFotoTicketMobile(${i})" style="padding:4px 8px;font-size:12px;width:auto;flex:none;">🗑</button>`:''}
     </div>`;
   }).join('') : '<div style="font-size:11px;color:#666;">Sin fotos todavía.</div>';
   list.innerHTML = sanitizeHTML(fotosHTML);
@@ -2488,7 +2499,7 @@ async function saveTicket(){
     }
     if(resM && resM.ok===false){
       tickets = tickets.filter(x=>x.codigo!==code);
-      showToast("⚠ No se pudo crear el ticket: "+(resM.message||resM.error||"error"),"error");
+      showToast("⚠ No se pudo crear el ticket: "+_msgServidor(resM,"error"),"error");
       return;
     }
     const codigoRealM = (resM && resM.codigo) ? resM.codigo : code;
@@ -3363,7 +3374,7 @@ async function guardarNuevoActivoMobile(){
           cerrarNuevoActivoMobile(); renderActivos();
           showMobToast('⏱ El servidor tardó en confirmar. Revise la lista antes de repetirlo.');
         }else{
-          showMobToast('⚠ No se pudo guardar el activo: '+((_resNuevo&&(_resNuevo.message||_resNuevo.error))||'sin respuesta'));
+          showMobToast('⚠ No se pudo guardar el activo: '+_msgServidor(_resNuevo,'sin respuesta'));
         }
         return;
       }

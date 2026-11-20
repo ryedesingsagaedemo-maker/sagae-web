@@ -3326,8 +3326,11 @@ async function verificarLoginTOTP(){
   }else{
     ll.style.display='none';
     if(resp && resp.error==='PREAUTH_EXPIRADO'){
-      err.textContent='⏱ Se agotó el tiempo para ingresar el código. Vuelve a iniciar sesión.';
       volverLoginPassword();
+      err.textContent='Demasiados códigos incorrectos. Vuelve a ingresar tu contraseña.';
+    }else if(resp && resp.error==='BLOCKED'){
+      volverLoginPassword();
+      err.textContent='Demasiados intentos. Espera 15 minutos.';
     }else{
       err.textContent='Código incorrecto. Intenta de nuevo.';
     }
@@ -3736,6 +3739,10 @@ async function confirmarActivacion2FA(){
     _2faPendiente = null;
     showToast('✅ Verificación en dos pasos activada','success');
     _render2FASeccion_(true);
+  }else if(resp && resp.error==='TOTP_EXPIRADO'){
+    _2faPendiente = null;
+    _render2FASeccion_(false);
+    showToast('⚠ El código QR expiró. Genera uno nuevo.','error');
   }else{
     showToast('⚠ Código incorrecto, intenta de nuevo','error');
   }
@@ -3769,6 +3776,10 @@ async function enr2faConfirmar(){
     _enr2fa=null; session=null;
     document.getElementById('enr2fa-paso1').style.display='none';
     document.getElementById('enr2fa-ok').style.display='block';
+  }else if(resp && resp.error==='TOTP_EXPIRADO'){
+    _enr2fa=null; document.getElementById('enr2fa-codigo').value='';
+    await _mostrarEnrolar2FA();   // genera un código nuevo
+    err.textContent='El código QR expiró. Se generó uno nuevo: escanéalo otra vez.'; err.style.display='block';
   }else{
     err.textContent='El código no coincide. Revisa la hora de tu teléfono e intenta de nuevo.'; err.style.display='block';
   }
@@ -4286,7 +4297,7 @@ async function tomarTicket(codigo){
     renderAll();
     showToast('⚠ '+resultado.takenBy+' tomó este ticket justo antes que tú.','error');
   } else {
-    showToast('⚠ No se pudo guardar. Verifica tu conexión.','error');
+    showToast('⚠ No se pudo guardar. '+(_MSG_ERR_SERVIDOR[resultado.error]||'Verifica tu conexión.'),'error');
   }
 }
 
@@ -4509,7 +4520,7 @@ function _renderGaleriaFotosAdmin(fotosRaw){
         ${_escHtml(f.nota?' — '+sanitizeHTML(f.nota):'')}
         <div style="font-size:10px;color:var(--text3);margin-top:2px">${_escHtml(f.fecha||'')}${_escHtml(f.usuario?' · '+sanitizeHTML(f.usuario):'')}${_escHtml(f.estado?' · '+sanitizeHTML(f.estado):'')}</div>
       </div>
-      ${(!readOnly && !bloqueada)?`<button type="button" class="btn" onclick="quitarFotoTicketAdmin(${i})" style="padding:4px 8px;font-size:11px;white-space:nowrap;">🗑</button>`:''}
+      ${(!readOnly && !bloqueada && session && session.rol==='admin')?`<button type="button" class="btn" onclick="quitarFotoTicketAdmin(${i})" style="padding:4px 8px;font-size:11px;white-space:nowrap;">🗑</button>`:''}
     </div>`;
   }).join('') : '<div style="font-size:11px;color:var(--text3);">Sin fotos todavía.</div>';
   document.getElementById('et-fotos-limite-note').style.display = fotos.length>=5 ? 'block' : 'none';
@@ -7790,8 +7801,15 @@ function _escHtml(s){
 }
 
 // Motivo legible de un fallo de escritura. TIMEOUT es ambiguo: la fila pudo guardarse.
+const _MSG_ERR_SERVIDOR={
+  HISTORIAL_INVALIDO:'El historial del registro no es válido. Recarga la pantalla e intenta de nuevo.',
+  FOTOS_INVALIDAS:'Las fotos no son válidas. Revisa las fotos adjuntas e intenta de nuevo.',
+  DEMASIADAS_FOTOS:'Un ticket admite máximo 5 fotos.',
+  RATE_LIMIT:'Demasiadas acciones seguidas. Espera un momento e intenta de nuevo.'
+};
 function _impMotivo(res){
   if(!res) return 'sin respuesta del servidor';
+  if(_MSG_ERR_SERVIDOR[res.error]) return _MSG_ERR_SERVIDOR[res.error];
   if(res.error==='TIMEOUT') return 'sin confirmar por tiempo agotado: revise la lista ANTES de repetir (pudo guardarse)';
   return res.message||res.error||'error desconocido';
 }
