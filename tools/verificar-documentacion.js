@@ -16,7 +16,13 @@ const DOCS = [
 
 function leer(p) { return fs.readFileSync(p, 'utf8'); }
 function lf(s) { return s.replace(/\r\n/g, '\n'); }
-function sha256(s) { return crypto.createHash('sha256').update(lf(s), 'utf8').digest('hex'); }
+// La huella cubre el TEXTO legal visible (sin etiquetas, estilos ni scripts): así un cambio de diseño o de
+// una ruta de imagen no exige nueva versión, pero cualquier cambio de redacción sí.
+function textoLegal(s) {
+  return lf(s).replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+}
+function sha256(s) { return crypto.createHash('sha256').update(textoLegal(s), 'utf8').digest('hex'); }
 function textoPlano(html) {
   return html.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ')
     .replace(/<[^>]+>/g, ' ')
