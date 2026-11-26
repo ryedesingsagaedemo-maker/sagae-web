@@ -340,6 +340,18 @@ tbody tr.clickable{cursor:pointer;}
 @keyframes save-rot{to{transform:rotate(360deg);}}
 .save-overlay-sub{display:block;font-weight:400;font-size:11px;color:var(--text3);margin-top:3px;}
 .btn[disabled],.btn-p[disabled]{opacity:.55;cursor:not-allowed;pointer-events:none;}
+/* ── GUARDADO OPTIMISTA (R1): marca en la fila, barra "Sincronizando…" y esqueleto de carga ── */
+.gd-marca{display:inline-block;margin-top:3px;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700;}
+.gd-ok{background:#FEF3C7;color:#92400E;}
+.gd-err{background:#FDE8E8;color:#B42318;cursor:pointer;pointer-events:auto;text-decoration:underline;}
+tr.gd-pend,.k-card.gd-pend{pointer-events:none;}
+tr.gd-pend td:last-child,.k-card.gd-pend button{opacity:.35;}
+tr.gd-pend .gd-marca,.k-card.gd-pend .gd-marca{pointer-events:auto;}
+#sync-bar{position:fixed;top:0;left:50%;transform:translateX(-50%);z-index:950;display:none;background:#1B3A6B;color:#fff;
+  font-size:11px;font-weight:600;padding:3px 14px;border-radius:0 0 8px 8px;box-shadow:0 2px 8px rgba(0,0,0,.2);pointer-events:none;}
+.sk-bar{height:12px;border-radius:6px;background:linear-gradient(90deg,var(--bg3,#e8eaee) 25%,#f3f4f6 50%,var(--bg3,#e8eaee) 75%);
+  background-size:200% 100%;animation:sk-brillo 1.2s ease-in-out infinite;}
+@keyframes sk-brillo{0%{background-position:200% 0;}100%{background-position:-200% 0;}}
 .req-note{font-size:11px;color:var(--red);background:var(--red-l);padding:6px 10px;border-radius:var(--r-md);margin-bottom:12px;border:1px solid var(--red-m);}
 .info-note{font-size:11px;color:var(--blue);background:var(--blue-l);padding:6px 10px;border-radius:var(--r-md);margin-bottom:12px;border:1px solid var(--blue-m);}
 .pass-wrap{position:relative;}
@@ -3090,6 +3102,11 @@ async function loadFromSheets(){
   const lt=document.getElementById('loading-text'),ls=document.getElementById('loading-sub');
   const cancelBtn=document.getElementById('loading-cancel-btn');
   cancelBtn.style.display='none';
+  if(_cargaInicial){ // esqueleto en vez de tabla vacía mientras llegan los datos
+    const ta=document.getElementById('tb-activos'),tt=document.getElementById('tb-tickets');
+    if(ta) ta.innerHTML=_esqueletoFilas(10);
+    if(tt) tt.innerHTML=_esqueletoFilas(9);
+  }
   const _avisoLargo = setTimeout(()=>{ ls.textContent='Esto está tardando más de lo normal, seguimos intentando...'; }, 8000);
   const _avisoCancelar = setTimeout(()=>{ cancelBtn.style.display='inline-block'; }, 20000);
   try{
@@ -3123,6 +3140,7 @@ async function loadFromSheets(){
   cntActivos = activos.length;
   tickets  = rawT.map(r=>({...r,id:r.codigo,avance:parseInt(r.avance)||0,historial:parseHist(r.historial)}));
   cntTickets = tickets.length;
+  _cargaInicial = false;
 
   // Avisar si hubo falla parcial en lo esencial
   const hojasFallidas = [];
@@ -3153,6 +3171,7 @@ async function loadFromSheets(){
   }catch(err){
     clearTimeout(_avisoLargo); clearTimeout(_avisoCancelar); cancelBtn.style.display='none';
     console.error('Error cargando datos:',err);
+    if(_cargaInicial){ _cargaInicial=false; try{ renderActivos(); renderTickets(); }catch(e2){} }
     lt.textContent='⚠️ Error de conexión';
     ls.textContent='Verifica tu conexión e intenta de nuevo.';
     setSyncStatus(false,'Error de conexión');
@@ -4156,6 +4175,7 @@ async function saveActivo(){
   if(isEdit){
     const motivo=document.getElementById('ea-motivo').value.trim();if(!motivo){alert('El motivo es obligatorio.');return;}
     const a=activos.find(x=>x.codigo===editId);if(!a)return;
+    if(a._estadoGuardado){showToast('Este activo tiene un guardado pendiente. Espera la confirmación o usa «Reintentar» en su fila.','');return;}
     const cambios=[];
     // Guardar asignado y depto ANTES de aplicar cambios para detectar reasignación
     const _asignadoAntes = a.asignado||'—';
@@ -4238,36 +4258,30 @@ async function saveActivo(){
       showToast('✅ Equipo devuelto de mantenimiento' + (emailRespSalida?' — se notificará a '+emailRespSalida:''),'success');
     }
 
-    await apiPost('activos','update',a);audit('EDITAR','Activo',a.codigo,det);
+    // Guardado optimista: los cambios ya están aplicados en memoria; la fila muestra "Guardando…"
+    guardarOptimista('activos', a, {
+      accion:'update', nombre:a.codigo, key:'edit-act-'+a.codigo, vistas:['activos','dashboard'],
+      payload:()=>_limpiarReg(a),
+      alConfirmar: async(res)=>{
+        audit('EDITAR','Activo',a.codigo,det);
+        if(res && res._cola) showToast('⚠ Sin conexión: los cambios de '+a.codigo+' quedaron en cola y se enviarán solos.','error');
+        else showToast('✅ Activo '+a.codigo+' guardado','success');
+        if(activoActual && activoActual.codigo===a.codigo) showDetalle(a.codigo);
+      }
+    });
   }else{
-    // Consultar Sheets para el consecutivo real de activos
-    // Protección anti-duplicados activos — igual que tickets
-    if(window._savingActivo){
-      showToast('Ya hay un activo guardándose, espera un momento...','');
-      return;
-    }
-    window._savingActivo = true;
-    // Código provisional único — el servidor asigna el real con LockService
+    // Guardado optimista: el activo entra a la lista con código provisional y la marca "Guardando…";
+    // el servidor asigna el código real (LockService) y el _opId evita duplicados al reintentar.
+    // Ya no se descarga la hoja entera solo para contar filas (bloqueaba la ventana).
     const _asfx = Date.now().toString(36).toUpperCase().slice(-4)
                 + Math.random().toString(36).toUpperCase().slice(2,4);
     const code = 'ACT-P' + _asfx;
-    let cntActReal = 0;
-    try{
-      const _ra = await apiGet('activos');
-      cntActReal = Array.isArray(_ra) ? _ra.length : cntActivos;
-      if(cntActReal >= cntActivos) cntActivos = cntActReal;
-    }catch(e){ cntActReal = cntActivos; }
-    cntActivos = cntActReal + 1;
     const a={id:code,codigo:code,nombre,tipo:document.getElementById('ea-tipo').value,estado:document.getElementById('ea-estado').value,marca:document.getElementById('ea-marca').value.trim()||'—',modelo:document.getElementById('ea-modelo').value.trim()||'—',serial:document.getElementById('ea-serial').value.trim()||'—',ubicacion:document.getElementById('ea-ubicacion').value.trim()||'—',asignado:document.getElementById('ea-asignado').value||'—',
     asignadoEmail:(()=>{const sel=document.getElementById('ea-asignado');const opt=sel?.options[sel?.selectedIndex];return opt?.dataset?.email||document.getElementById('ea-asignado-email')?.value||'';})(),
     asignadoCargo:(()=>{const sel=document.getElementById('ea-asignado');const opt=sel?.options[sel?.selectedIndex];return opt?.dataset?.cargo||document.getElementById('ea-asignado-cargo')?.value||'';})(),
     responsableEspacioEmail:document.getElementById('ea-responsable-espacio-email')?.value||'',
     responsableEspacioEmail:document.getElementById('ea-responsable-espacio-email')?.value||'',depto:document.getElementById('ea-depto').value.trim()||'—',compra:document.getElementById('ea-compra').value||'—',garantia:document.getElementById('ea-garantia').value||'—',valor:parseFloat(document.getElementById('ea-valor').value)||0,vida:parseInt(document.getElementById('ea-vida').value)||3,obs:document.getElementById('ea-obs').value.trim(),foto:document.getElementById('ea-foto')?.value.trim()||'—',historial:[{tipo:'Creación',desc:'Registrado por '+session.nombre,fecha:ts(),usuario:session.nombre,color:'green'}],fechaCreacion:ts()};
-    activos.push(a);
-    mostrarGuardando('Guardando activo...','No cierres esta ventana.');
-    let _resA;
-    try{ _resA = await apiPostAsync('activos','insert',a,60000); }
-    finally{ window._savingActivo = false; ocultarGuardando(); }
+    activos.push(a); cntActivos = activos.length;
     const _recargarActivos = async()=>{
       try{
         const raw = await apiGet('activos');
@@ -4279,28 +4293,35 @@ async function saveActivo(){
       }catch(e){}
       return false;
     };
-    if(!_resA || _resA.ok===false){
-      // Sin confirmación NO se reintenta a ciegas: se recarga para ver si entró.
-      activos = activos.filter(x=>x.codigo!==code);
-      if(_resA && _resA.error==='TIMEOUT'){
+    guardarOptimista('activos', a, {
+      accion:'insert', nombre:'el activo', key:code, vistas:['activos','dashboard'],
+      payload:()=>_limpiarReg(a),
+      alTimeout: async()=>{
+        // Sin confirmación NO se reintenta a ciegas: se recarga para ver si entró.
+        activos = activos.filter(x=>x!==a);
         await _recargarActivos();
-        showToast('⏱ El servidor tardó en confirmar. Se actualizó la lista: verifique si el activo se creó antes de repetirlo.','error');
-        closeModals(); renderAll();
-      }else{
-        showToast('⚠ No se pudo guardar el activo: '+((_resA&&(_resA.message||_resA.error))||'sin respuesta'),'error');
+        const h = activos.find(x=>x.nombre===nombre && x.fechaCreacion===a.fechaCreacion);
+        if(h) activos = activos.filter(x=>x!==h);
+        _reinyectarPendientes('activos');
+        return h ? {ok:true, codigo:h.codigo} : null;
+      },
+      alConfirmar: async(res)=>{
+        // Adoptar el código REAL: con el provisional, editar este activo antes de
+        // recargar buscaría una fila que no existe y el cambio se perdería.
+        let _codReal = (res && res.codigo) || '';
+        if(!_codReal){
+          await _recargarActivos();
+          _codReal = (activos.find(x=>x.nombre===nombre && x.fechaCreacion===a.fechaCreacion)||{}).codigo || '';
+        } else { a.codigo = _codReal; a.id = _codReal; }
+        showToast('✅ Activo '+(_codReal||'')+' creado correctamente','success');
+        audit('CREAR','Activo',_codReal||code,'Registrado: '+nombre);
+        renderSolo(['activos','dashboard']);
       }
-      return;
-    }
-    // Adoptar el código REAL: con el provisional, editar este activo antes de
-    // recargar buscaría una fila que no existe y el cambio se perdería.
-    let _codReal = _resA.codigo || '';
-    if(!_codReal){
-      await _recargarActivos();
-      _codReal = (activos.find(x=>x.nombre===nombre && x.fechaCreacion===a.fechaCreacion)||{}).codigo || '';
-    } else { a.codigo = _codReal; a.id = _codReal; }
-    audit('CREAR','Activo',_codReal||code,'Registrado: '+nombre);
+    });
   }
-  closeModals();renderAll();if(isEdit&&activoActual)showDetalle(activoActual.codigo);
+  { const _b=document.getElementById('ea-save-btn'),_lib=_btnGuardando(_b);
+    closeModals(); setTimeout(_lib,300); }
+  if(isEdit&&activoActual)showDetalle(activoActual.codigo);
 }
 
 
@@ -4479,7 +4500,7 @@ function _etActualizarBloqueDevolucion(){
 // Hasta ahora esto solo ocurría editando el equipo a mano, así que un ticket
 // cerrado podía dejar el equipo "en mantenimiento" para siempre y sin constancia
 // de la devolución ni aviso a quien lo entregó.
-async function _devolverEquipoAlCerrarTicket(t, estadoAntes){
+async function _devolverEquipoAlCerrarTicket(t, estadoAntes, datosDev){
   if(t.estado!=='cerrado' || estadoAntes==='cerrado') return null;
   if(t.tipo!=='mantenimiento' || !t.activoId) return null;
   const act = activos.find(a=>a.codigo===t.activoId);
@@ -4490,8 +4511,9 @@ async function _devolverEquipoAlCerrarTicket(t, estadoAntes){
   const hist = parseHist(act.historial);
   const entradas = hist.filter(h=>h && h.tipo==='Entrada a Mantenimiento');
   const entrada = entradas.slice().reverse().find(h=>h.ticket===t.codigo) || entradas[entradas.length-1];
-  const retira = document.getElementById('et-dev-nombre')?.value.trim() || '';
-  const cond   = document.getElementById('et-dev-cond')?.value.trim() || '';
+  // Con el guardado optimista la ventana ya está cerrada: los datos vienen capturados al pulsar Guardar.
+  const retira = datosDev ? (datosDev.nombre||'') : (document.getElementById('et-dev-nombre')?.value.trim() || '');
+  const cond   = datosDev ? (datosDev.cond||'')   : (document.getElementById('et-dev-cond')?.value.trim() || '');
   const estadoPrevio = act.estado, histPrevio = act.historial;
   act.estado = 'activo';
   act.historial = [...hist, {
@@ -4824,28 +4846,174 @@ function ocultarGuardando(){
   _pausarPollingPorGuardado = false;
 }
 
-async function saveTicket(){
+// ═══════════════════════════════════════════════════════════════════
+// GUARDADO OPTIMISTA (tanda R1: B1 / B2 / B9 / G1)
+// ═══════════════════════════════════════════════════════════════════
+// Al pulsar Guardar la ventana se cierra de inmediato; el registro aparece
+// en la lista con la marca "⏳ Guardando…" y el envío sigue en segundo plano.
+// Si el servidor lo rechaza, la fila pasa a "⚠ No se guardó · Reintentar" y el
+// borrador (el propio registro, en memoria) se conserva: un clic lo reenvía con
+// el mismo _opId, así que un reintento nunca crea un segundo registro.
+// B9a: mientras Activos y Tickets cargan por primera vez se muestran filas grises animadas
+let _cargaInicial = true;
+function _esqueletoFilas(cols){
+  const fila = '<tr class="sk-row" aria-hidden="true">'+'<td><div class="sk-bar"></div></td>'.repeat(cols)+'</tr>';
+  return fila.repeat(6);
+}
+const _pend = new Map();   // clave → envío en curso o fallido
+let _pendSeq = 0;
+
+function _pendCuenta(){ let n=0; _pend.forEach(e=>{ if(e.estado==='guardando') n++; }); return n; }
+
+// Barra fija discreta "Sincronizando…" mientras haya envíos pendientes (B9b)
+function _pendBarra(){
+  let b = document.getElementById('sync-bar');
+  const n = _pendCuenta();
+  if(!n){ if(b) b.style.display='none'; return; }
+  if(!b){
+    b = document.createElement('div'); b.id='sync-bar'; b.setAttribute('role','status');
+    document.body.appendChild(b);
+  }
+  b.textContent = '⏳ Sincronizando… ('+n+' pendiente'+(n!==1?'s':'')+')';
+  b.style.display = 'block';
+}
+
+// Marca visible dentro de una fila o tarjeta
+function _marcaGuardado(it){
+  if(!it || !it._estadoGuardado) return '';
+  if(it._estadoGuardado==='error')
+    return '<span class="gd-marca gd-err" role="button" tabindex="0" title="El borrador se conserva. Toca para reintentar." onclick="event.stopPropagation();reintentarGuardado(\''+_jsArg(it._pendKey)+'\')">⚠ No se guardó · Reintentar</span>';
+  return '<span class="gd-marca gd-ok">⏳ Guardando…</span>';
+}
+
+// B2: redibuja solo las vistas afectadas (en vez de renderAll)
+function renderSolo(vistas){
+  const m = {tickets:renderTickets, kanban:renderKanban, dashboard:renderDash, activos:renderActivos,
+             mobiliario:renderMobiliario, auditoria:renderAudit};
+  (vistas||[]).forEach(v=>{ try{ if(m[v]) m[v](); }catch(e){ console.warn('[renderSolo] '+v+':',e.message); } });
+}
+
+function _listaDe(hoja){ return hoja==='tickets'?tickets : hoja==='activos'?activos : hoja==='mobiliario'?mobiliario : []; }
+function _limpiarReg(o){ const c={...o}; delete c._estadoGuardado; delete c._pendKey; return c; }
+
+// Devuelve a la lista los registros que aún no están confirmados (tras una recarga o sondeo)
+function _reinyectarPendientes(hoja){
+  _pend.forEach(e=>{
+    if(e.hoja!==hoja) return;
+    const lista = _listaDe(hoja);
+    e.registros.forEach(r=>{
+      const i = lista.findIndex(x=>x && x.codigo===r.codigo);
+      if(i>=0) lista[i]=r; else lista.push(r);
+    });
+  });
+}
+
+function _pendMarcar(e, estado){ e.estado=estado; e.registros.forEach(r=>{ r._estadoGuardado=estado; r._pendKey=e.key; }); }
+
+// guardarOptimista(hoja, registro, opciones)
+//  registro: objeto que YA está en la lista en memoria (para crear, con código provisional)
+//  opciones: {accion:'insert'|'update', key, vistas:[...], registros:[...] (si son varios),
+//             nombre, preparar:async(e)=>({ok})|{ok:false,motivo}, payload:(e)=>obj,
+//             enviar:async(e)=>res (envío propio), alTimeout:async(e,res)=>res|null,
+//             alConfirmar:async(res,e)}
+function guardarOptimista(hoja, registro, op){
+  op = op||{};
+  const regs = op.registros || [registro];
+  const key = op.key || ('g'+Date.now().toString(36)+(++_pendSeq));
+  const e = {key, hoja, registro:regs[0], registros:regs, op, estado:'guardando', enviando:false,
+             prep:false, payload:null, opId:_generarOpId(), ultimoError:''};
+  _pend.set(key, e);
+  _pendMarcar(e,'guardando');
+  _pendBarra();
+  renderSolo(op.vistas);
+  setTimeout(()=>_enviarPend(e), 0);
+  return e;
+}
+
+async function _enviarPend(e){
+  if(e.enviando) return;
+  e.enviando = true;
+  _pendMarcar(e,'guardando'); _pendBarra(); renderSolo(e.op.vistas);
+  let res = null;
+  try{
+    if(e.op.preparar && !e.prep){
+      const p = await e.op.preparar(e);
+      if(p && p.ok===false){ res = {ok:false, message:p.motivo}; }
+      else e.prep = true;
+    }
+    if(!res){
+      if(!e.payload && e.op.payload) e.payload = e.op.payload(e);
+      if(e.op.enviar) res = await e.op.enviar(e);
+      else if(!_isOnline && e.op.accion==='update'){
+        await apiPost(e.hoja,'update',{...e.payload,_opId:e.opId}); res = {ok:true,_cola:true};
+      }
+      else if(!_isOnline) res = {ok:false, message:'Sin conexión. El borrador se conserva: toca «Reintentar» cuando vuelva la red.'};
+      else res = await apiPostAsync(e.hoja, e.op.accion, {...e.payload,_opId:e.opId}, 60000);
+      if(res && res.ok===false && res.error==='TIMEOUT' && e.op.alTimeout){
+        const r2 = await e.op.alTimeout(e,res); if(r2) res = r2;
+      }
+    }
+  }catch(err){ res = {ok:false, message:(err&&err.message)||'error inesperado'}; }
+  e.enviando = false;
+  if(!res || res.ok===false){
+    e.ultimoError = (res&&res.error)||'';
+    _pendMarcar(e,'error');
+    showToast('⚠ No se guardó'+(e.op.nombre?' '+e.op.nombre:'')+': '+_impMotivo(res)+' Toca «Reintentar» en la fila.','error');
+    _pendBarra(); renderSolo(e.op.vistas);
+    return;
+  }
+  _pend.delete(e.key);
+  e.registros.forEach(r=>{ delete r._estadoGuardado; delete r._pendKey; });
+  e.estado = 'ok';
+  _pendBarra();
+  try{ if(e.op.alConfirmar) await e.op.alConfirmar(res,e); }
+  catch(err){ showToast('⚠ Se guardó, pero falló un paso posterior: '+((err&&err.message)||'desconocido'),'error'); }
+  renderSolo(e.op.vistas);
+}
+
+// Un clic en la marca de error reenvía el MISMO borrador (un solo envío a la vez)
+function reintentarGuardado(key){
+  const e = _pend.get(key);
+  if(!e || e.estado!=='error' || e.enviando) return;
+  // Tras un rechazo claro del servidor se usa un _opId nuevo; tras un tiempo agotado
+  // se conserva el mismo para que el servidor reconozca el envío ya hecho.
+  if(e.ultimoError!=='TIMEOUT') e.opId = _generarOpId();
+  _enviarPend(e);
+}
+
+// Con envíos sin confirmar, avisar antes de cerrar la pestaña
+window.addEventListener('beforeunload', ev=>{ if(_pend.size){ ev.preventDefault(); ev.returnValue=''; } });
+
+// Botón Guardar: deshabilitado e indicador desde el primer clic; se libera al cerrarse la ventana
+function _btnGuardando(btn){
+  if(!btn) return ()=>{};
+  const txt = btn.textContent;
+  btn.disabled = true; btn.textContent = '⏳ Guardando…';
+  return ()=>{ btn.disabled=false; btn.textContent=txt; };
+}
+
+function saveTicket(){
   // Defensa en profundidad: si el rol activo no tiene permiso de edición, se bloquea
   // el guardado aunque el botón esté oculto y aunque alguien manipule el formulario.
   if(!(PERMS[session.rol]||{}).edit){showToast('Tu rol no tiene permiso para editar tickets.','error');return;}
-  // Un único candado para creación Y edición. Antes solo existía en la
-  // rama de creación, así que en "Guardar cambios" cada clic disparaba
-  // una actualización y una tanda de correos adicional.
+  // Candado contra doble envío (creación y edición): la captura del formulario y el
+  // cierre de la ventana son inmediatos; el envío corre después, en segundo plano.
   if(window._savingTicket){
     showToast('El ticket se está guardando, espera un momento...','');
     return;
   }
   const titulo=document.getElementById('et-titulo').value.trim();if(!titulo){alert('El título es obligatorio.');return;}
   const editId=document.getElementById('et-id').value,isEdit=editId!=='';
-  // ── Validaciones ANTES de bloquear la pantalla ──────────────────
+  // ── Validaciones ANTES de cerrar la ventana (igual que siempre) ──
   let motivo='';
   if(isEdit){
     motivo=document.getElementById('et-motivo').value.trim();
     if(!motivo){alert('El motivo es obligatorio.');return;}
-    if(!tickets.find(x=>x.codigo===editId)){showToast('No se encontró el ticket a editar.','error');return;}
+    const _t0=tickets.find(x=>x.codigo===editId);
+    if(!_t0){showToast('No se encontró el ticket a editar.','error');return;}
+    if(_t0._estadoGuardado){showToast('Este ticket tiene un guardado pendiente. Espera la confirmación o usa «Reintentar» en su fila.','');return;}
   }
-  // Si se pidieron piezas, los dos campos son obligatorios — al crear y al
-  // editar. Se valida aquí, antes de bloquear la pantalla y de tocar nada.
+  // Si se pidieron piezas, los dos campos son obligatorios — al crear y al editar.
   if(document.getElementById('et-necesita-piezas')?.checked
      && document.getElementById('et-piezas-wrap')?.style.display === 'block'){
     if(!document.getElementById('et-piezas-desc')?.value.trim()){
@@ -4857,236 +5025,199 @@ async function saveTicket(){
   }
 
   window._savingTicket = true;
-  mostrarGuardando(
-    isEdit ? 'Guardando cambios...' : 'Creando ticket...',
-    'No cierres esta ventana. Los correos de aviso se envían por separado.'
-  );
-
+  const liberarBtn = _btnGuardando(document.getElementById('et-save-btn'));
   try{
-  if(isEdit){
-    const t=tickets.find(x=>x.codigo===editId);if(!t)return;
-    // La lista llega en modo ligero (historial recortado). Guardar así borraría
-    // los eventos que no se descargaron: primero se trae el historial completo.
-    if(t._histLigero && !(await _completarHistorialTicket(t))){
-      showToast('⚠ No se pudo cargar el historial completo del ticket, así que no se guardó para no perder eventos. Intenta de nuevo en unos segundos.','error');
-      return;
-    }
-    const cambios=[];const nResp=document.getElementById('et-resp').value||'—';
-    // Capturar valores ANTES del cambio para el historial
-    const estadoAnteriorTicket = t.estado;
-    const avanceAnteriorTicket = t.avance||0;
-    const respAnteriorTicket   = t.resp||'—';
-    if(t.titulo!==titulo)cambios.push(`Título:"${t.titulo}"→"${titulo}"`);if(t.resp!==nResp)cambios.push(`Responsable:"${t.resp}"→"${nResp}"`);
-    t.titulo=titulo;t.resp=nResp;t.tipo=document.getElementById('et-tipo').value;t.prior=document.getElementById('et-prior').value;
-    t.estado=document.getElementById('et-estado').value;t.avance=Math.min(100,Math.max(0,parseInt(document.getElementById('et-avance').value)||0));
-    t.dead=document.getElementById('et-dead').value||'—';t.proy=document.getElementById('et-proy').value.trim()||'—';t.desc=document.getElementById('et-desc').value.trim();t.fotos=JSON.stringify(_etFotosActuales);t.foto=_etFotosActuales.length?_etFotosActuales[0].url:'—';
-    const det=`Motivo: ${motivo}. ${cambios.length?'Cambios: '+cambios.join('; '):''}`;
-    t.historial=t.historial||[];
-    // Evento de historial detallado — visible para técnicos, consultores y usuario
-    const eventosDetalle = [];
-    if(t.estado !== estadoAnteriorTicket) eventosDetalle.push('Estado: '+estadoAnteriorTicket+' → '+t.estado);
-    if(t.avance !== avanceAnteriorTicket)  eventosDetalle.push('Avance: '+avanceAnteriorTicket+'% → '+t.avance+'%');
-    if(t.resp !== respAnteriorTicket)      eventosDetalle.push('Responsable: '+respAnteriorTicket+' → '+t.resp);
-    const colorEvento = t.estado==='cerrado'?'green':t.estado==='progreso'?'blue':'amber';
-    t.historial.push({
-      tipo: t.estado==='cerrado'?'✅ Ticket cerrado':t.estado==='progreso'?'🔧 En progreso':'📝 Actualización',
-      desc: det+(eventosDetalle.length?' | '+eventosDetalle.join(' · '):''),
-      fecha:ts(),usuario:session.nombre,color:colorEvento
-    });
-    // ── Recepción de un equipo que no está en el inventario ────────
-    // No hay activo cuyo estado cambiar, así que la constancia vive aquí,
-    // en el historial del ticket, y sale en su Expediente.
-    if(!t.activoId && document.getElementById('et-externo-wrap')?.style.display === 'block'){
-      const extEquipo = document.getElementById('et-ext-equipo')?.value.trim()||'';
-      const extCond   = document.getElementById('et-ext-cond')?.value.trim()||'';
-      const extNombre = document.getElementById('et-ext-nombre')?.value.trim()||'';
-      const extEmail  = document.getElementById('et-ext-email')?.value.trim()||'';
-      if(extEquipo || extNombre){
-        t.historial.push({
-          tipo: 'Recepción de equipo externo',
-          desc: `Equipo recibido en IT que no pertenece al inventario: ${extEquipo||'sin descripción'}.`
-                + (extCond   ? ` Condición al recibirlo: ${extCond}.` : '')
-                + (extNombre ? ` Entregado por: ${extNombre}.` : '')
-                + (extEmail  ? ` Correo: ${extEmail}.` : ''),
-          equipoExterno: true,
-          equipoDesc: extEquipo,
-          condicion: extCond,
-          entregadoPorNombre: extNombre,
-          emailResp: extEmail,
-          tecnico: session.nombre,
-          fecha: ts(), usuario: session.nombre, color: 'amber'
-        });
-      }
-    }
-    // ── Solicitud de piezas ────────────────────────────────────────
-    // Va de ÚLTIMA a propósito: el backend mira el último evento del
-    // historial para decidir si manda el correo al encargado de compras.
-    if(document.getElementById('et-necesita-piezas')?.checked){
-      const piezasDesc   = document.getElementById('et-piezas-desc')?.value.trim()||'';
-      const emailCompras = document.getElementById('et-piezas-email')?.value.trim()||'';
-      const urgencia     = document.getElementById('et-piezas-urgencia')?.value||'normal';
-      const presupuesto  = parseFloat(document.getElementById('et-piezas-presupuesto')?.value)||0;
-      t.historial.push({
-        tipo: 'Solicitud de Compra',
-        desc: `Piezas: ${piezasDesc}. Urgencia: ${urgencia}. Presupuesto: $${presupuesto||'TBD'}. Solicita: ${session.nombre}. Email: ${emailCompras}.`,
-        fecha: ts(), usuario: session.nombre, tec: session.nombre,
-        piezas: piezasDesc, urgencia, presupuesto, emailCompras,
-        estado: 'pendiente', color: 'red'
-      });
-    }
-    const rEdit = await apiPost('tickets','update',{...t, _fotosQuitar:_etFotosQuitar.slice()});
+    // ── Captura del formulario: la ventana se cierra y el borrador queda en memoria ──
+    const q = id=>{ const el=document.getElementById(id); return el?el.value:''; };
+    const f = {
+      resp:q('et-resp')||'—', tipo:q('et-tipo'), prior:q('et-prior'), estado:q('et-estado'),
+      avance:Math.min(100,Math.max(0,parseInt(q('et-avance'))||0)),
+      dead:q('et-dead')||'—', proy:q('et-proy').trim()||'—', desc:q('et-desc').trim(),
+      fotosJson:JSON.stringify(_etFotosActuales), foto:_etFotosActuales.length?_etFotosActuales[0].url:'—',
+      quitar:_etFotosQuitar.slice(),
+      extVisible: document.getElementById('et-externo-wrap')?.style.display==='block',
+      extEquipo:q('et-ext-equipo').trim(), extCond:q('et-ext-cond').trim(),
+      extNombre:q('et-ext-nombre').trim(), extEmail:q('et-ext-email').trim(),
+      piezasOn: !!document.getElementById('et-necesita-piezas')?.checked,
+      piezasVisible: document.getElementById('et-piezas-wrap')?.style.display==='block',
+      pDesc:q('et-piezas-desc').trim(), pMail:q('et-piezas-email').trim(), pUrg:q('et-piezas-urgencia')||'normal',
+      pPres:parseFloat(q('et-piezas-presupuesto'))||0,
+      devNombre:q('et-dev-nombre').trim(), devCond:q('et-dev-cond').trim(),
+      activoId:q('et-activo')
+    };
     _etFotosQuitar=[];
-    audit('EDITAR','Ticket',t.codigo,det);
-    if(rEdit===false){
-      showToast('⚠ Sin conexión: los cambios de '+t.codigo+' quedaron en cola y se enviarán solos.','error');
-    }else{
-      showToast('✅ Cambios guardados en '+t.codigo,'success');
-    }
-    // Si el ticket de mantenimiento se cerró, el equipo vuelve a estar disponible.
-    const dev = await _devolverEquipoAlCerrarTicket(t, estadoAnteriorTicket);
-    if(dev && dev.devuelto) showToast('🔧 El equipo '+dev.codigo+' salió de mantenimiento y quedó registrada su devolución.','success');
-    else if(dev && dev.sigue) showToast('ℹ El equipo sigue en mantenimiento: tiene otro ticket de mantenimiento abierto ('+dev.otro+').','');
-    else if(dev && dev.error) showToast('⚠ El ticket se cerró, pero no se pudo devolver el equipo de mantenimiento. Edite el equipo y cámbiele el estado.','error');
-  }else{
-    // ── CREACIÓN DE TICKET ────────────────────────────────────────
-    // Cambios de esta versión:
-    // 1. Se eliminó la descarga completa de la hoja Tickets que se hacía
-    //    solo para contar filas: el servidor ya asigna el consecutivo real
-    //    con LockService. Eso quitaba entre 5 y 15 segundos de espera.
-    // 2. Se usa apiPostAsync (POST + consulta del resultado por GET), así
-    //    el sistema SABE si el ticket se creó y con qué código, en vez de
-    //    suponerlo. Antes era imposible confirmarlo.
-    // 3. El _opId hace que un envío repetido NO cree un segundo ticket.
-    const _tsuffix = Date.now().toString(36).toUpperCase().slice(-4)
-                   + Math.random().toString(36).toUpperCase().slice(2,4);
-    const code = 'TKT-P' + _tsuffix; // código provisional — el servidor asigna el real
-    const aId=document.getElementById('et-activo').value;
-    const aNom=aId?(activos.find(a=>a.codigo===aId)||{nombre:'—'}).nombre:'—';
-    const t={id:code,codigo:code,titulo,activoId:aId||'',activoNombre:aNom,resp:document.getElementById('et-resp').value||'—',tipo:document.getElementById('et-tipo').value,prior:document.getElementById('et-prior').value,estado:document.getElementById('et-estado').value,avance:Math.min(100,Math.max(0,parseInt(document.getElementById('et-avance').value)||0)),dead:document.getElementById('et-dead').value||'—',proy:document.getElementById('et-proy').value.trim()||'—',desc:document.getElementById('et-desc').value.trim(),fotos:JSON.stringify(_etFotosActuales),foto:_etFotosActuales.length?_etFotosActuales[0].url:'—',historial:[{tipo:'Creación',desc:'Creado por '+session.nombre,fecha:ts(),usuario:session.nombre,color:'green'}],fechaCreacion:ts()};
-    const codigosAntes = new Set(tickets.map(x=>x.codigo));
-    tickets.push(t);
 
-    let res = await apiPostAsync('tickets','insert',t,60000);
-
-    if(res && res.ok===false && res.error==='TIMEOUT'){
-      // No se pudo confirmar. NO se reintenta a ciegas (eso duplicaba filas):
-      // se recarga la lista desde el servidor y se BUSCA el ticket, entre los
-      // códigos que no existían antes. Si aparece, se trata como creado (con
-      // su código real) y el formulario se cierra; si no, el formulario queda
-      // abierto y se avisa de revisar la lista ANTES de repetir.
-      tickets = tickets.filter(x=>x.codigo!==code);
-      showToast('⏱ El servidor tardó en confirmar. Verificando si el ticket se creó...','error');
-      let hallado = await _buscarTicketCreado(codigosAntes, t);
-      if(!hallado){ await new Promise(r=>setTimeout(r,5000)); hallado = await _buscarTicketCreado(codigosAntes, t); }
-      if(!hallado){
-        showToast('⚠ No se pudo confirmar si el ticket se creó. Revise la lista ANTES de volver a guardar, para no duplicarlo.','error');
-        return;
-      }
-      tickets = tickets.filter(x=>x.codigo!==hallado.codigo);
-      tickets.push(t);
-      res = {ok:true, codigo:hallado.codigo};
-    }
-    if(res && res.ok===false){
-      tickets = tickets.filter(x=>x.codigo!==code);
-      showToast('⚠ No se pudo crear el ticket: '+(res.message||res.error||'error desconocido'),'error');
-      return;
-    }
-
-    // Adoptar el código REAL asignado por el servidor
-    const codigoReal = (res && res.codigo) ? res.codigo : code;
-    t.codigo = codigoReal; t.id = codigoReal;
-    if(res && res.duplicadoEvitado){
-      showToast('ℹ Este ticket ya se había registrado como '+codigoReal+'. No se creó un duplicado.','');
-    }else{
-      showToast('✅ Ticket '+codigoReal+' creado correctamente','success');
-    }
-
-    // Vincular el activo DESPUÉS de conocer el código real, para que su
-    // hoja de vida no quede apuntando a un código provisional inexistente.
-    if(aId){
-      const act=activos.find(a=>a.codigo===aId);
-      if(act){
-        act.historial=act.historial||[];
-        act.historial.push({tipo:'Ticket vinculado',desc:codigoReal+': '+titulo,fecha:ts(),usuario:session.nombre,color:'blue'});
-        if(t.tipo==='mantenimiento'){
-          act.estado='mantenimiento';
-          // El equipo entra a custodia de IT. Hasta ahora esto ocurría en
-          // silencio: el activo cambiaba de estado y solo quedaba "Ticket
-          // vinculado". Se registra la entrada igual que cuando se marca a
-          // mano, para que haya constancia de quién lo entregó y para que la
-          // devolución sepa después a quién avisar.
-          const rNombre = document.getElementById('et-ext-nombre')?.value.trim()||'';
-          const rEmail  = document.getElementById('et-ext-email')?.value.trim()||'';
-          act.historial.push({
-            tipo:      'Entrada a Mantenimiento',
-            desc:      `Equipo ingresado a IT por el ticket ${codigoReal}: ${titulo}.`
-                       + (rNombre ? ` Entregado por: ${rNombre}.` : '')
-                       + ' Equipo estará en el Departamento de Tecnología hasta ser devuelto.',
-            tecnico:   (t.resp && t.resp!=='—') ? t.resp : session.nombre,
-            emailResp: rEmail || act.asignadoEmail || '',
-            entregadoPorNombre: rNombre,
-            asignadoA: act.asignado||'—',
-            ticket:    codigoReal,
-            fecha:     ts(), usuario: session.nombre, color: 'amber'
+    if(isEdit){
+      const t=tickets.find(x=>x.codigo===editId);
+      // Valores ANTES del cambio, para el historial
+      const ant = {estado:t.estado, avance:t.avance||0, resp:t.resp||'—'};
+      const cambios=[];
+      if(t.titulo!==titulo)cambios.push(`Título:"${t.titulo}"→"${titulo}"`);if(t.resp!==f.resp)cambios.push(`Responsable:"${t.resp}"→"${f.resp}"`);
+      // Se aplica en memoria ya: la fila muestra el cambio con la marca "Guardando…"
+      t.titulo=titulo;t.resp=f.resp;t.tipo=f.tipo;t.prior=f.prior;t.estado=f.estado;t.avance=f.avance;
+      t.dead=f.dead;t.proy=f.proy;t.desc=f.desc;t.fotos=f.fotosJson;t.foto=f.foto;
+      const det=`Motivo: ${motivo}. ${cambios.length?'Cambios: '+cambios.join('; '):''}`;
+      guardarOptimista('tickets', t, {
+        accion:'update', nombre:t.codigo, key:'edit-'+t.codigo, vistas:['tickets','kanban','dashboard'],
+        preparar: async()=>{
+          // La lista llega en modo ligero (historial recortado). Guardar así borraría
+          // los eventos que no se descargaron: primero se trae el historial completo.
+          if(t._histLigero && !(await _completarHistorialTicket(t)))
+            return {ok:false, motivo:'No se pudo cargar el historial completo del ticket, así que no se guardó para no perder eventos. Intenta de nuevo en unos segundos.'};
+          t.historial = parseHist(t.historial);
+          const eventosDetalle = [];
+          if(t.estado !== ant.estado) eventosDetalle.push('Estado: '+ant.estado+' → '+t.estado);
+          if(t.avance !== ant.avance) eventosDetalle.push('Avance: '+ant.avance+'% → '+t.avance+'%');
+          if(t.resp !== ant.resp)     eventosDetalle.push('Responsable: '+ant.resp+' → '+t.resp);
+          const colorEvento = t.estado==='cerrado'?'green':t.estado==='progreso'?'blue':'amber';
+          t.historial.push({
+            tipo: t.estado==='cerrado'?'✅ Ticket cerrado':t.estado==='progreso'?'🔧 En progreso':'📝 Actualización',
+            desc: det+(eventosDetalle.length?' | '+eventosDetalle.join(' · '):''),
+            fecha:ts(),usuario:session.nombre,color:colorEvento
           });
+          // ── Recepción de un equipo que no está en el inventario ──
+          if(!t.activoId && f.extVisible && (f.extEquipo || f.extNombre)){
+            t.historial.push({
+              tipo: 'Recepción de equipo externo',
+              desc: `Equipo recibido en IT que no pertenece al inventario: ${f.extEquipo||'sin descripción'}.`
+                    + (f.extCond   ? ` Condición al recibirlo: ${f.extCond}.` : '')
+                    + (f.extNombre ? ` Entregado por: ${f.extNombre}.` : '')
+                    + (f.extEmail  ? ` Correo: ${f.extEmail}.` : ''),
+              equipoExterno: true, equipoDesc: f.extEquipo, condicion: f.extCond,
+              entregadoPorNombre: f.extNombre, emailResp: f.extEmail, tecnico: session.nombre,
+              fecha: ts(), usuario: session.nombre, color: 'amber'
+            });
+          }
+          // ── Solicitud de piezas: va de ÚLTIMA a propósito (el backend mira el último evento) ──
+          if(f.piezasOn){
+            t.historial.push({
+              tipo: 'Solicitud de Compra',
+              desc: `Piezas: ${f.pDesc}. Urgencia: ${f.pUrg}. Presupuesto: $${f.pPres||'TBD'}. Solicita: ${session.nombre}. Email: ${f.pMail}.`,
+              fecha: ts(), usuario: session.nombre, tec: session.nombre,
+              piezas: f.pDesc, urgencia: f.pUrg, presupuesto: f.pPres, emailCompras: f.pMail,
+              estado: 'pendiente', color: 'red'
+            });
+          }
+          return {ok:true};
+        },
+        payload: ()=>({..._limpiarReg(t), _fotosQuitar:f.quitar}),
+        alConfirmar: async(res)=>{
+          audit('EDITAR','Ticket',t.codigo,det);
+          if(res && res._cola) showToast('⚠ Sin conexión: los cambios de '+t.codigo+' quedaron en cola y se enviarán solos.','error');
+          else showToast('✅ Cambios guardados en '+t.codigo,'success');
+          // Si el ticket de mantenimiento se cerró, el equipo vuelve a estar disponible.
+          const dev = await _devolverEquipoAlCerrarTicket(t, ant.estado, {nombre:f.devNombre, cond:f.devCond});
+          if(dev && dev.devuelto){ showToast('🔧 El equipo '+dev.codigo+' salió de mantenimiento y quedó registrada su devolución.','success'); renderSolo(['activos','dashboard']); }
+          else if(dev && dev.sigue) showToast('ℹ El equipo sigue en mantenimiento: tiene otro ticket de mantenimiento abierto ('+dev.otro+').','');
+          else if(dev && dev.error) showToast('⚠ El ticket se cerró, pero no se pudo devolver el equipo de mantenimiento. Edite el equipo y cámbiele el estado.','error');
         }
-        await apiPost('activos','update',act);
-      }
-    }
+      });
+    }else{
+      // ── CREACIÓN DE TICKET ────────────────────────────────────────
+      // Se agrega a la lista con un código provisional y la marca "Guardando…";
+      // el servidor asigna el consecutivo real (LockService). apiPostAsync (POST +
+      // consulta del resultado por GET) permite SABER si se creó y con qué código.
+      // El _opId evita que un envío repetido cree un segundo ticket.
+      const _tsuffix = Date.now().toString(36).toUpperCase().slice(-4)
+                     + Math.random().toString(36).toUpperCase().slice(2,4);
+      const code = 'TKT-P' + _tsuffix; // código provisional — el servidor asigna el real
+      const aId = f.activoId;
+      const aNom=aId?(activos.find(a=>a.codigo===aId)||{nombre:'—'}).nombre:'—';
+      const t={id:code,codigo:code,titulo,activoId:aId||'',activoNombre:aNom,resp:f.resp,tipo:f.tipo,prior:f.prior,estado:f.estado,avance:f.avance,dead:f.dead,proy:f.proy,desc:f.desc,fotos:f.fotosJson,foto:f.foto,historial:[{tipo:'Creación',desc:'Creado por '+session.nombre,fecha:ts(),usuario:session.nombre,color:'green'}],fechaCreacion:ts()};
+      const codigosAntes = new Set(tickets.map(x=>x.codigo));
+      tickets.push(t);
+      guardarOptimista('tickets', t, {
+        accion:'insert', nombre:'el ticket', key:code, vistas:['tickets','kanban','dashboard'],
+        payload: ()=>_limpiarReg(t),
+        alTimeout: async()=>{
+          // No se pudo confirmar. NO se reintenta a ciegas (eso duplicaba filas): se recarga
+          // la lista y se BUSCA el ticket entre los códigos que no existían antes.
+          showToast('⏱ El servidor tardó en confirmar. Verificando si el ticket se creó...','error');
+          let hallado = await _buscarTicketCreado(codigosAntes, t);
+          if(!hallado){ await new Promise(r=>setTimeout(r,5000)); hallado = await _buscarTicketCreado(codigosAntes, t); }
+          if(hallado) tickets = tickets.filter(x=>x.codigo!==hallado.codigo);
+          _reinyectarPendientes('tickets');
+          return hallado ? {ok:true, codigo:hallado.codigo} : null;
+        },
+        alConfirmar: async(res)=>{
+          // Adoptar el código REAL asignado por el servidor
+          const codigoReal = (res && res.codigo) ? res.codigo : code;
+          t.codigo = codigoReal; t.id = codigoReal;
+          if(res && res.duplicadoEvitado) showToast('ℹ Este ticket ya se había registrado como '+codigoReal+'. No se creó un duplicado.','');
+          else showToast('✅ Ticket '+codigoReal+' creado correctamente','success');
+          renderSolo(['tickets','kanban','dashboard']);
 
-    // Constancia de recepción y pedido de piezas en el historial del TICKET.
-    // Se mandan como ACTUALIZACIÓN posterior al alta a propósito: el backend
-    // solo revisa el último evento al ACTUALIZAR, no al insertar, así que un
-    // pedido escrito en el alta nunca dispararía el correo a compras.
-    const evTicket = [];
-    if(!aId && document.getElementById('et-externo-wrap')?.style.display==='block'){
-      const xEquipo = document.getElementById('et-ext-equipo')?.value.trim()||'';
-      const xCond   = document.getElementById('et-ext-cond')?.value.trim()||'';
-      const xNombre = document.getElementById('et-ext-nombre')?.value.trim()||'';
-      const xEmail  = document.getElementById('et-ext-email')?.value.trim()||'';
-      if(xEquipo || xNombre){
-        evTicket.push({
-          tipo: 'Recepción de equipo externo',
-          desc: `Equipo recibido en IT que no pertenece al inventario: ${xEquipo||'sin descripción'}.`
-                + (xCond   ? ` Condición al recibirlo: ${xCond}.` : '')
-                + (xNombre ? ` Entregado por: ${xNombre}.` : '')
-                + (xEmail  ? ` Correo: ${xEmail}.` : ''),
-          equipoExterno: true, equipoDesc: xEquipo, condicion: xCond,
-          entregadoPorNombre: xNombre, emailResp: xEmail, tecnico: session.nombre,
-          fecha: ts(), usuario: session.nombre, color: 'amber'
-        });
-      }
-    }
-    if(document.getElementById('et-necesita-piezas')?.checked
-       && document.getElementById('et-piezas-wrap')?.style.display==='block'){
-      const pDesc  = document.getElementById('et-piezas-desc')?.value.trim()||'';
-      const pMail  = document.getElementById('et-piezas-email')?.value.trim()||'';
-      const pUrg   = document.getElementById('et-piezas-urgencia')?.value||'normal';
-      const pPres  = parseFloat(document.getElementById('et-piezas-presupuesto')?.value)||0;
-      evTicket.push({
-        tipo: 'Solicitud de Compra',
-        desc: `Piezas: ${pDesc}. Urgencia: ${pUrg}. Presupuesto: $${pPres||'TBD'}. Solicita: ${session.nombre}. Email: ${pMail}.`,
-        fecha: ts(), usuario: session.nombre, tec: session.nombre,
-        piezas: pDesc, urgencia: pUrg, presupuesto: pPres, emailCompras: pMail,
-        estado: 'pendiente', color: 'red'
+          // Vincular el activo DESPUÉS de conocer el código real, para que su
+          // hoja de vida no quede apuntando a un código provisional inexistente.
+          if(aId){
+            const act=activos.find(a=>a.codigo===aId);
+            if(act){
+              act.historial=act.historial||[];
+              act.historial.push({tipo:'Ticket vinculado',desc:codigoReal+': '+titulo,fecha:ts(),usuario:session.nombre,color:'blue'});
+              if(t.tipo==='mantenimiento'){
+                act.estado='mantenimiento';
+                // El equipo entra a custodia de IT: se registra la entrada para que haya
+                // constancia de quién lo entregó y la devolución sepa a quién avisar.
+                act.historial.push({
+                  tipo:      'Entrada a Mantenimiento',
+                  desc:      `Equipo ingresado a IT por el ticket ${codigoReal}: ${titulo}.`
+                             + (f.extNombre ? ` Entregado por: ${f.extNombre}.` : '')
+                             + ' Equipo estará en el Departamento de Tecnología hasta ser devuelto.',
+                  tecnico:   (t.resp && t.resp!=='—') ? t.resp : session.nombre,
+                  emailResp: f.extEmail || act.asignadoEmail || '',
+                  entregadoPorNombre: f.extNombre,
+                  asignadoA: act.asignado||'—',
+                  ticket:    codigoReal,
+                  fecha:     ts(), usuario: session.nombre, color: 'amber'
+                });
+              }
+              await apiPost('activos','update',act);
+              renderSolo(['activos','dashboard']);
+            }
+          }
+
+          // Constancia de recepción y pedido de piezas: se mandan como ACTUALIZACIÓN
+          // posterior al alta a propósito (el backend solo revisa el último evento al
+          // ACTUALIZAR, no al insertar, así que un pedido en el alta nunca mandaría el correo).
+          const evTicket = [];
+          if(!aId && f.extVisible && (f.extEquipo || f.extNombre)){
+            evTicket.push({
+              tipo: 'Recepción de equipo externo',
+              desc: `Equipo recibido en IT que no pertenece al inventario: ${f.extEquipo||'sin descripción'}.`
+                    + (f.extCond   ? ` Condición al recibirlo: ${f.extCond}.` : '')
+                    + (f.extNombre ? ` Entregado por: ${f.extNombre}.` : '')
+                    + (f.extEmail  ? ` Correo: ${f.extEmail}.` : ''),
+              equipoExterno: true, equipoDesc: f.extEquipo, condicion: f.extCond,
+              entregadoPorNombre: f.extNombre, emailResp: f.extEmail, tecnico: session.nombre,
+              fecha: ts(), usuario: session.nombre, color: 'amber'
+            });
+          }
+          if(f.piezasOn && f.piezasVisible){
+            evTicket.push({
+              tipo: 'Solicitud de Compra',
+              desc: `Piezas: ${f.pDesc}. Urgencia: ${f.pUrg}. Presupuesto: $${f.pPres||'TBD'}. Solicita: ${session.nombre}. Email: ${f.pMail}.`,
+              fecha: ts(), usuario: session.nombre, tec: session.nombre,
+              piezas: f.pDesc, urgencia: f.pUrg, presupuesto: f.pPres, emailCompras: f.pMail,
+              estado: 'pendiente', color: 'red'
+            });
+          }
+          if(evTicket.length){
+            t.historial = (t.historial||[]).concat(evTicket);
+            await apiPost('tickets','update',_limpiarReg(t));
+          }
+          audit('CREAR','Ticket',codigoReal,'Creado: '+titulo);
+        }
       });
     }
-    if(evTicket.length){
-      t.historial = (t.historial||[]).concat(evTicket);
-      await apiPost('tickets','update',t);
-    }
-    audit('CREAR','Ticket',codigoReal,'Creado: '+titulo);
-  }
-  closeModals();renderAll();
+    closeModals();
   }catch(err){
+    liberarBtn();
     showToast('⚠ Error al guardar: '+(err&&err.message?err.message:'desconocido'),'error');
   }finally{
-    // Sin este finally, cualquier excepción intermedia dejaba el candado
-    // activado para siempre y el botón Guardar quedaba muerto hasta
-    // recargar la página.
     window._savingTicket = false;
-    ocultarGuardando();
   }
+  // La ventana ya está cerrada: se libera el botón para la próxima vez que se abra
+  setTimeout(liberarBtn, 300);
 }
 
 // Recarga la lista de tickets desde el servidor. Se usa cuando una
@@ -5095,15 +5226,16 @@ async function saveTicket(){
 // Busca en la lista recién descargada un ticket que NO existía antes de guardar
 // y que coincide con el que se acaba de enviar (mismo título y responsable).
 async function _buscarTicketCreado(codigosAntes, t){
-  await recargarTickets();
+  await recargarTickets(false); // sin reinyectar: el borrador provisional no debe contarse como "hallado"
   return tickets.find(x=>x && x.codigo && !codigosAntes.has(x.codigo)
                           && x.titulo===t.titulo && (x.resp||'—')===(t.resp||'—')) || null;
 }
-async function recargarTickets(){
+async function recargarTickets(conservarPend=true){
   try{
     const raw = await apiGet('tickets');
     if(Array.isArray(raw) && !raw._failed){
       tickets = raw.map(r=>({...r, id:r.codigo, avance:parseInt(r.avance)||0, historial:parseHist(r.historial)}));
+      if(conservarPend) _reinyectarPendientes('tickets');
       renderAll();
     }
   }catch(e){ /* si falla, el sondeo periódico lo corregirá */ }
@@ -5312,6 +5444,7 @@ function resetInactivityTimer(){
 // el mismo que el de esta pestaña. Si alguien inició sesión en otro lugar
 // el token cambiará y esta sesión se cierra automáticamente.
 let _sessionCheckInterval = null;
+let _sesionCheckPendiente = false, _chequearSesionFn = null, _visSesionListener = false;
 function iniciarControlSesionUnica(){
   clearInterval(_sessionCheckInterval);
 
@@ -5321,8 +5454,11 @@ function iniciarControlSesionUnica(){
   // Antes era cada 30s, pero cada verificación es un doPost+doGet que
   // compite por la cuota de ejecuciones concurrentes de Apps Script,
   // afectando el login de otros usuarios.
-  _sessionCheckInterval = setInterval(async()=>{
+  // B6: con la pestaña oculta no se consulta al servidor; se verifica al volver a verla.
+  const _chequearSesion = async()=>{
     if(!session || !session.token) return;
+    if(document.hidden){ _sesionCheckPendiente = true; return; }
+    _sesionCheckPendiente = false;
     try{
       const r = await apiPostAsync(null,'session_check',{_sessionToken:session.token});
       if(r && r.ok){
@@ -5359,7 +5495,15 @@ function iniciarControlSesionUnica(){
     }catch(e){
       // Error de red — no hacer nada, esperar siguiente ciclo
     }
-  }, 120 * 1000);
+  };
+  _chequearSesionFn = _chequearSesion;
+  _sessionCheckInterval = setInterval(_chequearSesion, 120 * 1000);
+  if(!_visSesionListener){
+    _visSesionListener = true;
+    document.addEventListener('visibilitychange', ()=>{
+      if(!document.hidden && _sesionCheckPendiente && _chequearSesionFn && session && session.token) _chequearSesionFn();
+    });
+  }
 }
 
 function validateDateField(input){
@@ -5807,10 +5951,11 @@ function renderActivos(){
     : activos.filter(a=>a.estado===filtroA);
   // Filtrar por tipo (combinado con estado)
   if(filtroTipo!=='todos') list = list.filter(a=>a.tipo===filtroTipo);
+  if(!list.length && _cargaInicial){tb.innerHTML=_esqueletoFilas(10);return;}
   if(!list.length){tb.innerHTML=`<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--text3);font-size:12px">Sin activos${filtroA!=='todos'?' en este estado':'. Usa "+ Nuevo activo"'}.</td></tr>`;return;}
-  tb.innerHTML=list.map(a=>`<tr class="clickable ${a.estado==='eliminado'?'del-row':''}" onclick="showDetalle('${_jsArg(a.codigo)}')">
+  tb.innerHTML=list.map(a=>`<tr class="clickable ${a.estado==='eliminado'?'del-row':''}${a._estadoGuardado?' gd-pend':''}" onclick="showDetalle('${_jsArg(a.codigo)}')">
     <td class="code-cell">${_escHtml(a.codigo)}</td>
-    <td><div style="font-weight:600;font-size:12px">${_escHtml(a.nombre||'')}</div><div style="font-size:10px;color:var(--text3)">${_escHtml(a.marca||'')} ${_escHtml(a.modelo||'')}</div></td>
+    <td><div style="font-weight:600;font-size:12px">${_escHtml(a.nombre||'')}</div><div style="font-size:10px;color:var(--text3)">${_escHtml(a.marca||'')} ${_escHtml(a.modelo||'')}</div>${_marcaGuardado(a)}</td>
     <td>${_escHtml(a.tipo||'')}</td><td><div title="${_escHtml(escAttr(a.asignadoEmail?'📧 '+a.asignadoEmail:''))}">${_escHtml(a.asignado||'—')}${a.asignadoEmail?'<span style="font-size:9px;color:var(--navy);margin-left:3px">📧</span>':''}</div><div style="font-size:10px;color:var(--text3)">${_escHtml(a.depto||'')}</div></td>
     <td style="font-size:11px">${_escHtml(a.ubicacion||'—')}</td><td><span class="badge s-${_escHtml(a.estado)}">${_escHtml(a.estado)}</span></td>
     <td style="text-align:center">${a.foto && a.foto!=='—' ? `<a href="${_escHtml(_safeUrl(sanitizeHTML(a.foto)))}" target="_blank" title="Ver foto/doc" style="font-size:16px;text-decoration:none">📎</a>` : '<span style="color:var(--text3);font-size:11px">—</span>'}</td>
@@ -5834,10 +5979,11 @@ function renderTickets(){
   const list = filtroT==='todos' ? tickets
     : filtroT==='abierto' ? tickets.filter(t=>['abierto','progreso','revision'].includes(t.estado))
     : tickets.filter(t=>t.estado===filtroT);
+  if(!list.length && _cargaInicial){tb.innerHTML=_esqueletoFilas(9);return;}
   if(!list.length){tb.innerHTML=`<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text3);font-size:12px">Sin tickets.</td></tr>`;return;}
-  tb.innerHTML=list.map(t=>`<tr class="${t.estado==='eliminado'?'del-row':''}">
+  tb.innerHTML=list.map(t=>`<tr class="${t.estado==='eliminado'?'del-row':''}${t._estadoGuardado?' gd-pend':''}">
     <td class="code-cell">${_escHtml(t.codigo)}</td>
-    <td><div style="font-weight:600;font-size:12px">${_escHtml(t.titulo)}</div><div style="font-size:10px;color:var(--text3)">${_escHtml(t.tipo||'')} · ${_escHtml(t.proy||'—')}</div></td>
+    <td><div style="font-weight:600;font-size:12px">${_escHtml(t.titulo)}</div><div style="font-size:10px;color:var(--text3)">${_escHtml(t.tipo||'')} · ${_escHtml(t.proy||'—')}</div>${_marcaGuardado(t)}</td>
     <td style="font-size:11px">${_escHtml(t.activoNombre||'—')}</td>
     <td>
       ${t.resp&&t.resp!=='—'
@@ -5862,12 +6008,12 @@ function renderTickets(){
 function renderKanban(){
   ['abierto','progreso','revision','cerrado'].forEach(col=>{
     const items=tickets.filter(t=>t.estado===col);document.getElementById('kc-'+col).textContent=items.length;
-    document.getElementById('k-'+col).innerHTML=items.length?items.map(t=>`<div class="k-card" style="cursor:pointer;position:relative" onclick="openTicket('${_jsArg(t.codigo)}',true)" title="Ver historial y trazabilidad (solo lectura)">
+    document.getElementById('k-'+col).innerHTML=items.length?items.map(t=>`<div class="k-card${t._estadoGuardado?' gd-pend':''}" style="cursor:pointer;position:relative" onclick="openTicket('${_jsArg(t.codigo)}',true)" title="Ver historial y trazabilidad (solo lectura)">
       ${((PERMS[session.rol]||{}).edit)?`<button onclick="event.stopPropagation();openTicket('${_jsArg(t.codigo)}')" title="Editar" style="position:absolute;top:6px;right:6px;background:none;border:none;cursor:pointer;font-size:12px;color:var(--text3);padding:2px">✎</button>`:''}
       <button onclick="event.stopPropagation();imprimirExpedienteTicket('${_jsArg(t.codigo)}')" title="Generar expediente completo" style="position:absolute;top:6px;right:${((PERMS[session.rol]||{}).edit)?'24':'6'}px;background:none;border:none;cursor:pointer;font-size:12px;color:var(--text3);padding:2px"><span class="nav-ico" style="width:12px;height:12px;display:inline-flex;vertical-align:middle"><svg viewBox="0 0 24 24"><path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5"/></svg></span></button>
       <div class="k-card-accent ${t.prior==='urgente'?'pri-alta':t.prior==='importante'?'pri-media':'pri-baja'}"></div>
       <div class="code-cell" style="font-size:9px;margin-bottom:3px">${_escHtml(t.codigo)}</div>
-      <div class="k-card-t">${_escHtml(t.titulo)}</div>
+      <div class="k-card-t">${_escHtml(t.titulo)}</div>${_marcaGuardado(t)}
       <div class="k-card-m"><span>${_escHtml(t.activoNombre&&t.activoNombre!=='—'?t.activoNombre:t.proy||'—')}</span><span class="badge s-${_escHtml(t.prior)}" style="font-size:9px">${_escHtml(t.prior)}</span></div>
       <div class="k-card-m">
         <span style="${t.resp===session.nombre?'color:#1A7A4A;font-weight:600':''}">${_escHtml(t.resp||'Sin asignar')}</span>
@@ -9445,7 +9591,7 @@ async function _ejecutarPoll(){
   // No consultar mientras se está guardando: la respuesta del sondeo podía
   // reemplazar el arreglo de tickets justo en medio de la operación y
   // competir por la cuota de ejecución de Apps Script, alargando la espera.
-  if(_pausarPollingPorGuardado){ _programarSiguientePoll(); return; }
+  if(_pausarPollingPorGuardado || _pendCuenta()>0){ _programarSiguientePoll(); return; }
 
   try{
     // Solo consultar tickets — es el dato más dinámico
@@ -9477,6 +9623,7 @@ async function _ejecutarPoll(){
 
     // Actualizar arrays en memoria
     tickets = newTickets;
+    _reinyectarPendientes('tickets'); // los envíos sin confirmar no desaparecen con el sondeo
     _lastTicketHash  = newHash;
     _lastTicketCount = newTickets.length;
 
@@ -9631,10 +9778,10 @@ function renderMobiliario(){
 
   const condColor = {bueno:'#1D9E75',regular:'#BA7517',deteriorado:'#D85A30',baja:'#888'};
   tb.innerHTML = list.map(m=>`
-    <tr class="clickable" onclick="showDetalleMob('${_jsArg(m.codigo)}')">
+    <tr class="clickable${m._estadoGuardado?' gd-pend':''}" onclick="showDetalleMob('${_jsArg(m.codigo)}')">
       <td class="code-cell">${_escHtml(m.codigo||'—')}</td>
       <td>
-        <div style="font-weight:600;font-size:12px">${_escHtml(m.nombre||'')}</div>
+        <div style="font-weight:600;font-size:12px">${_escHtml(m.nombre||'')}</div>${_marcaGuardado(m)}
         <div style="font-size:10px;color:var(--text3)">${_escHtml((m.material||'')+' '+(m.color?'· '+m.color:''))}</div>
       </td>
       <td>${_escHtml(m.tipo||'—')}</td>
@@ -9771,11 +9918,11 @@ async function guardarMobiliario(){
   const nRegistros = (!isEdit && modo==='individual') ? cantidad : 1;
   if(nRegistros > 20 && !confirm('Se crearán '+nRegistros+' registros individuales, cada uno con su propio código. ¿Continuar?')) return;
 
-  window._guardandoMob = true;
-  mostrarGuardando(isEdit ? 'Guardando cambios...' : (nRegistros>1 ? 'Creando '+nRegistros+' registros...' : 'Guardando...'),
-                   'No cierres esta ventana.');
+  // ── Guardado optimista: la ventana se cierra al instante; el envío sigue en segundo plano ──
+  const _libMob = _btnGuardando(document.querySelector('#mod-mob .modal-actions .btn-p'));
   try{
     if(isEdit){
+      if(prev._estadoGuardado){ _libMob(); showToast('Este elemento tiene un guardado pendiente. Espera la confirmación o usa «Reintentar» en su fila.',''); return; }
       // ── EDICIÓN: el historial se ACUMULA y viaja como arreglo ───────
       // Antes se enviaba un texto con un solo evento y el servidor lo
       // escribía tal cual, borrando todo el historial anterior.
@@ -9789,52 +9936,65 @@ async function guardarMobiliario(){
       const det = `Motivo: ${motivo}. Cambios: ${cambios.length ? cambios.join('; ') : 'Sin cambios'}`;
       const historial = [...parseHist(prev.historial), {tipo:'Edición', desc:det, fecha:ts(), usuario:session.nombre, color:'amber'}];
       const obj = {...prev, ...campos, codigo:editCodigo, historial};
-      const res = await apiPostAsync('mobiliario','update',obj,60000);
-      if(!res || res.ok===false){
-        await _mobRecargar();
-        showToast('⚠ No se pudo confirmar el guardado: '+((res&&(res.message||res.error))||'sin respuesta')+'. Se actualizó la lista para que vea el estado real.','error');
-        renderMobiliario(); return;
-      }
+      const nuevoReg = {...obj, cantidad:cantidad, valor:campos.valor, historial};
       const idx = mobiliario.findIndex(m=>m.codigo===editCodigo);
-      if(idx>=0) mobiliario[idx] = {...obj, cantidad:cantidad, valor:campos.valor, historial};
-      audit('EDITAR','Mobiliario',editCodigo,det);
-      closeModals(); renderMobiliario(); renderDash();
-      showToast('✅ Elemento actualizado','success');
+      if(idx>=0) mobiliario[idx] = nuevoReg;
+      guardarOptimista('mobiliario', nuevoReg, {
+        accion:'update', nombre:editCodigo, key:'edit-mob-'+editCodigo, vistas:['mobiliario','dashboard'],
+        payload:()=>_limpiarReg(nuevoReg),
+        alConfirmar: async()=>{ audit('EDITAR','Mobiliario',editCodigo,det); showToast('✅ Elemento actualizado','success'); }
+      });
+      closeModals(); setTimeout(_libMob,300);
       return;
     }
 
     // ── CREACIÓN ───────────────────────────────────────────────────
+    // Cada registro entra a la lista con código provisional y su propio _opId (un reintento
+    // no duplica los que ya se crearon). Los códigos REALES llegan al recargar la hoja.
     const antes = new Set(mobiliario.map(m=>m.codigo));
-    let creados = 0, falla = null;
+    const sfx = Date.now().toString(36).toUpperCase().slice(-4);
+    const temps = [];
     for(let i=0;i<nRegistros;i++){
       const desc = modo==='lote'
         ? `Registrado por ${session.nombre} como lote de ${cantidad} unidades`
         : (nRegistros>1 ? `Registrado por ${session.nombre} — unidad ${i+1} de ${nRegistros}` : `Registrado por ${session.nombre}`);
-      const obj = {codigo:'', ...campos, cantidad: modo==='lote' ? cantidad : 1, estado:'activo',
-                   historial:[{tipo:'Creación', desc, fecha:ts(), usuario:session.nombre, color:'blue'}],
-                   fechaCreacion: ts()};
-      const res = await apiPostAsync('mobiliario','insert',obj,60000);
-      if(!res || res.ok===false){ falla = res; break; }
-      creados++;
+      temps.push({codigo:'MOB-P'+sfx+(i+1), ...campos, cantidad: modo==='lote' ? cantidad : 1, estado:'activo',
+                  historial:[{tipo:'Creación', desc, fecha:ts(), usuario:session.nombre, color:'blue'}],
+                  fechaCreacion: ts(), _opId:_generarOpId()});
     }
-    // Recargar para conocer los códigos REALES que asignó el servidor
-    await _mobRecargar();
-    const nuevos = mobiliario.filter(m=>!antes.has(m.codigo)).map(m=>m.codigo);
-    nuevos.forEach(c=>audit('CREAR','Mobiliario',c,'Registrado por '+session.nombre+': '+nombre+(modo==='lote'?' (lote de '+cantidad+')':'')));
-    closeModals(); renderMobiliario(); renderDash();
-    if(falla){
-      showToast('⚠ Solo se confirmaron '+creados+' de '+nRegistros+' registros ('+((falla&&(falla.message||falla.error))||'sin respuesta')+'). Revise la lista antes de repetir.','error');
-    } else {
-      showToast(nRegistros>1 ? '✅ '+nRegistros+' registros creados: '+nuevos[0]+' a '+nuevos[nuevos.length-1] : '✅ Elemento registrado'+(nuevos[0]?' ('+nuevos[0]+')':''),'success');
-    }
-    if(nuevos.length>1 && modo==='individual' && confirm('¿Imprimir ahora las '+nuevos.length+' etiquetas de los registros creados?')){
-      abrirModalEtiquetasGrupo('mobiliario', nuevos);
-    }
+    temps.forEach(o=>mobiliario.push(o));
+    const hechos = new Set(); // los ya confirmados no se vuelven a enviar al reintentar
+    guardarOptimista('mobiliario', temps[0], {
+      registros:temps, accion:'insert', nombre:(nRegistros>1?'los '+nRegistros+' registros':'el elemento'), key:temps[0].codigo,
+      vistas:['mobiliario','dashboard'],
+      enviar: async()=>{
+        let falla = null;
+        for(const o of temps){
+          if(hechos.has(o)) continue;
+          const res = await apiPostAsync('mobiliario','insert',{..._limpiarReg(o), codigo:'', _opId:o._opId},60000);
+          if(!res || res.ok===false){ falla = res || {ok:false}; break; }
+          hechos.add(o);
+        }
+        if(falla) return {ok:false, error:falla.error, message:'Solo se confirmaron '+hechos.size+' de '+temps.length+' registros ('+((falla.message||falla.error)||'sin respuesta')+')'};
+        return {ok:true};
+      },
+      alConfirmar: async()=>{
+        mobiliario = mobiliario.filter(m=>!temps.includes(m));
+        await _mobRecargar();           // conocer los códigos REALES que asignó el servidor
+        _reinyectarPendientes('mobiliario');
+        const nuevos = mobiliario.filter(m=>!antes.has(m.codigo) && !m._estadoGuardado).map(m=>m.codigo);
+        nuevos.forEach(c=>audit('CREAR','Mobiliario',c,'Registrado por '+session.nombre+': '+nombre+(modo==='lote'?' (lote de '+cantidad+')':'')));
+        renderSolo(['mobiliario','dashboard']);
+        showToast(nRegistros>1 ? '✅ '+nRegistros+' registros creados: '+nuevos[0]+' a '+nuevos[nuevos.length-1] : '✅ Elemento registrado'+(nuevos[0]?' ('+nuevos[0]+')':''),'success');
+        if(nuevos.length>1 && modo==='individual' && confirm('¿Imprimir ahora las '+nuevos.length+' etiquetas de los registros creados?')){
+          abrirModalEtiquetasGrupo('mobiliario', nuevos);
+        }
+      }
+    });
+    closeModals(); setTimeout(_libMob,300);
   }catch(e){
+    _libMob();
     showToast('Error guardando: '+e.message,'');
-  }finally{
-    window._guardandoMob = false;
-    ocultarGuardando();
   }
 }
 

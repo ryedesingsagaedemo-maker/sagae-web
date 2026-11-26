@@ -253,7 +253,6 @@ html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFo
 .strength-label{font-size:12px;font-weight:600;margin-top:4px;min-height:14px;}
 </style>
 <script src="config.js"></script>
-<script src="vendor/html5-qrcode.min.js"></script>
 <!-- Seguridad: XSS prevention via HTML sanitization -->
 <script src="vendor/purify.min.js"></script>
 </head>
@@ -616,7 +615,7 @@ html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFo
         <div style="font-size:11px;color:var(--text3)">📧 Se enviará correo al encargado y quedará en el historial.</div>
       </div>
     </div>
-    <button class="btn-primary" onclick="saveMant()">Registrar mantenimiento</button>
+    <button class="btn-primary" id="mm-save-btn" onclick="saveMant()">Registrar mantenimiento</button>
     <button class="btn-secondary" onclick="closeMant()">Cancelar</button>
   </div>
 </div>
@@ -774,6 +773,20 @@ function mostrarBotonEscaner(){
   const rolesPermitidos = ['admin','tecnico','inventario'];
   if(rolesPermitidos.includes(session.rol)){ btn.classList.add('visible'); } else { btn.classList.remove('visible'); }
 }
+/* v4.3: la librería del escáner (375 KB) se descarga solo al tocar "Escanear". */
+let _libEscanerP = null;
+function _cargarLibEscaner(){
+  if(window.Html5Qrcode) return Promise.resolve();
+  if(_libEscanerP) return _libEscanerP;
+  _libEscanerP = new Promise((res,rej)=>{
+    const sc = document.createElement('script');
+    sc.src = 'vendor/html5-qrcode.min.js';
+    sc.onload = ()=>res();
+    sc.onerror = ()=>{ _libEscanerP = null; sc.remove(); rej(new Error('No se pudo cargar el escáner')); };
+    document.head.appendChild(sc);
+  });
+  return _libEscanerP;
+}
 async function abrirEscanerQR(){
   if(!session || !['admin','tecnico','inventario'].includes(session.rol)){
     showToast('⛔ Sin permiso para usar el escáner','error');
@@ -789,6 +802,12 @@ async function abrirEscanerQR(){
   status.className = 'scanner-status';
   status.textContent = 'Iniciando cámara...';
   overlay.classList.add('open');
+  try{ await _cargarLibEscaner(); }
+  catch(e){
+    status.textContent = '⚠️ No se pudo cargar el escáner. Revisa tu conexión e intenta de nuevo.';
+    status.className = 'scanner-status error';
+    return;
+  }
   await iniciarEscanerCamara();
 }
 async function cerrarEscanerQR(){
@@ -1157,12 +1176,36 @@ function _descartarCacheDeOtroUsuario(){
     }
   }catch(e){ borrarCacheLocal(); }
 }
+/* v4.3 (carga ligera): el historial completo y las fotos de los eventos NO se
+   guardan en el celular. La copia local lleva el mismo recorte que el modo
+   liviano del servidor (primer evento + últimos 4, sin fotos de eventos); el
+   historial entero se pide al abrir el ticket (ticket_detail). */
+const HIST_LIGERO_MAX_MOB = 5;
+function _recortarHistLigero(hist){
+  const h = Array.isArray(hist) ? hist : [];
+  const rec = h.length > HIST_LIGERO_MAX_MOB ? [h[0]].concat(h.slice(-(HIST_LIGERO_MAX_MOB-1))) : h.slice();
+  return rec.map(e=>{
+    if(!e || typeof e!=='object' || e.fotos===undefined) return e;
+    const c = {...e}; delete c.fotos; return c;
+  });
+}
+function _ligeroParaCache(o){
+  const c = {...o};
+  ['_isTakeTicket','_respEsperado','_guardando','_errGuardado'].forEach(k=>delete c[k]);
+  const hist = parseHist(o.historial);
+  c._histTotal = (o._histLigero && o._histTotal) ? o._histTotal : hist.length;
+  c.historial = _recortarHistLigero(hist);
+  c._histLigero = true;
+  return c;
+}
+function _esTemporalMob(o){ return !!(o && o._temporal); }
 function saveCache(){try{
   /* v2.4: se depuran las banderas internas de "tomar ticket" antes de
      persistir, para que no revivan tras recargar la app. */
   if(!session) return; // sin sesión no se guardan datos personales en el equipo
-  const tks = tickets.map(t=>{ const c={...t}; delete c._isTakeTicket; delete c._respEsperado; return c; });
-  localStorage.setItem(CACHE_KEY,JSON.stringify({tickets:tks,activos,ts:Date.now(),user:session.username}));
+  const tks = tickets.filter(t=>!_esTemporalMob(t)).map(_ligeroParaCache);
+  const acts = activos.filter(a=>!_esTemporalMob(a)).map(_ligeroParaCache);
+  localStorage.setItem(CACHE_KEY,JSON.stringify({tickets:tks,activos:acts,ts:Date.now(),user:session.username}));
 }catch(e){}}
 function loadCache(){try{const c=JSON.parse(localStorage.getItem(CACHE_KEY)||"null");
   if(c && (!c.ts || Date.now()-c.ts > CACHE_MAX_AGE_MS)){ borrarCacheLocal(); return false; }
@@ -1180,7 +1223,10 @@ async function apiGet(sheet, intento=1){
     const tok = (typeof session!=='undefined' && session && session.token) ? '&session='+encodeURIComponent(session.token) : '';
     const controller = new AbortController();
     const timer = setTimeout(()=>controller.abort(), 30000);
-    const r=await fetch(API+"?sheet="+sheet+tok+"&t="+Date.now(),{mode:"cors", signal:controller.signal});
+    /* v4.3: los tickets se piden en modo liviano (historial recortado, sin
+       fotos de eventos); el detalle completo llega al abrir el ticket. */
+    const modoLigero = (sheet==='tickets') ? '&mode=light' : '';
+    const r=await fetch(API+"?sheet="+sheet+tok+modoLigero+"&t="+Date.now(),{mode:"cors", signal:controller.signal});
     clearTimeout(timer);
     if(!r.ok) throw new Error("HTTP "+r.status);
     const d=await r.json();
@@ -1203,6 +1249,102 @@ async function apiGet(sheet, intento=1){
    copia guardada que el técnico usa sin señal. */
 function _listaVaciaSospechosa(nueva, actual){
   return Array.isArray(nueva) && nueva.length===0 && Array.isArray(actual) && actual.length>0;
+}
+/* v4.3: convierte la lista cruda de tickets (modo liviano) a objetos de pantalla.
+   Si el ticket ya tenía el historial completo descargado y no hay eventos nuevos
+   (mismo total), se conserva el completo en vez de volver al recorte. */
+function _mapTicketsMob(raw, previos){
+  const prev = new Map((previos||[]).map(t=>[t.codigo,t]));
+  return raw.map(r=>{
+    const o = {...r, id:r.codigo, avance:parseInt(r.avance)||0, historial:parseHist(r.historial)};
+    const p = prev.get(o.codigo);
+    if(o._histLigero && p && !p._histLigero && Array.isArray(p.historial) && p.historial.length===o._histTotal){
+      o.historial = p.historial; delete o._histLigero; delete o._histTotal;
+    }
+    return o;
+  });
+}
+/* Los registros con guardado pendiente o fallido (solo existen en esta sesión)
+   no se pierden cuando llega una lista nueva del servidor. */
+function _conservarPendientesMob(nueva, anterior){
+  const pend = (anterior||[]).filter(x=>x && (x._guardando || x._errGuardado));
+  if(!pend.length) return nueva;
+  const porCod = new Map(pend.map(x=>[x.codigo,x]));
+  const usados = new Set();
+  const res = nueva.map(x=>{ const p=porCod.get(x.codigo); if(p){ usados.add(x.codigo); return p; } return x; });
+  pend.forEach(p=>{ if(!usados.has(p.codigo)) res.push(p); });
+  return res;
+}
+/* Detalle completo de UN ticket (ticket_detail). Misma idea que la web. */
+async function apiGetTicketDetailMob(codigo){
+  const tok = (session && session.token) ? '&session='+encodeURIComponent(session.token) : '';
+  for(let intento=1; intento<=3; intento++){
+    try{
+      const r = await fetch(API+'?action=ticket_detail&codigo='+encodeURIComponent(codigo)+tok+'&t='+Date.now(),
+                            {mode:'cors', signal:AbortSignal.timeout(20000)});
+      if(r.ok){
+        const d = await r.json();
+        if(d && d.ok && d.ticket) return d.ticket;
+        if(d && d.ok===false) return null; // respuesta real del servidor: no reintentar
+      }
+    }catch(e){ /* Google no respondió: reintentar */ }
+    if(intento<3) await new Promise(res=>setTimeout(res, intento*1500));
+  }
+  return null;
+}
+const _detalleEnCurso = new Map();
+/* Completa el historial de un ticket que llegó recortado. Devuelve true si el
+   ticket ya tiene su historial entero. NUNCA se manda al servidor una copia
+   recortada como si fuera completa: antes de editar se llama a esta función. */
+function _completarHistorialTicketMob(t){
+  if(!t || !t._histLigero) return Promise.resolve(true);
+  if(_detalleEnCurso.has(t.codigo)) return _detalleEnCurso.get(t.codigo);
+  const p = (async()=>{
+    const d = await apiGetTicketDetailMob(t.codigo);
+    if(!d) return false;
+    t.historial = parseHist(d.historial);
+    delete t._histLigero; delete t._histTotal;
+    return true;
+  })().finally(()=>{ _detalleEnCurso.delete(t.codigo); });
+  _detalleEnCurso.set(t.codigo, p);
+  return p;
+}
+/* Una copia de activo recuperada de la caché local lleva el historial recortado:
+   antes de editarla se descarga la lista completa de activos. */
+async function _completarActivoMob(a){
+  if(!a || !a._histLigero) return true;
+  try{
+    const raw = await apiGet('activos');
+    if(!Array.isArray(raw) || raw._failed || !raw.length) return false;
+    const f = raw.find(r=>r.codigo===a.codigo);
+    if(!f) return false;
+    a.historial = parseHist(f.historial);
+    delete a._histLigero; delete a._histTotal;
+    return true;
+  }catch(e){ return false; }
+}
+/* Datos que viajan al servidor: sin banderas internas de pantalla. */
+function _payloadMob(o, extra){
+  const p = {...o, ...(extra||{})};
+  ['_histLigero','_histTotal','_guardando','_errGuardado','_temporal','_isTakeTicket','_respEsperado'].forEach(k=>{ if(!(extra&&k in extra)) delete p[k]; });
+  return p;
+}
+/* Guardado optimista: borradores en memoria (sobreviven mientras la app esté abierta). */
+const _borradoresMob = new Map();
+function _spinnerBtnMob(btn, on, texto){
+  if(!btn) return;
+  if(on){
+    btn.dataset.txtOrig = btn.textContent;
+    btn.disabled = true;
+    btn.innerHTML = '<span style="display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.45);border-top-color:#fff;border-radius:50%;vertical-align:-2px;margin-right:8px;animation:mobsaverot .8s linear infinite"></span>';
+    btn.appendChild(document.createTextNode(texto||'Guardando…'));
+    if(!document.getElementById('mobsaverot-css')){
+      const st=document.createElement('style'); st.id='mobsaverot-css'; st.textContent='@keyframes mobsaverot{to{transform:rotate(360deg)}}'; document.head.appendChild(st);
+    }
+  }else{
+    btn.disabled = false;
+    if(btn.dataset.txtOrig!==undefined){ btn.textContent = btn.dataset.txtOrig; delete btn.dataset.txtOrig; }
+  }
 }
 // Identificadores impredecibles (crypto en vez de Math.random): la respuesta de cada
 // solicitud se consulta por este identificador, así que no debe poder adivinarse.
@@ -1447,7 +1589,7 @@ async function loadData(){
         ]);
         const tOk = rawT && !_listaVaciaSospechosa(rawT, tickets);
         const aOk = rawA && !_listaVaciaSospechosa(rawA, activos);
-        if(tOk)tickets=rawT.map(r=>({...r,id:r.codigo,avance:parseInt(r.avance)||0,historial:parseHist(r.historial)}));
+        if(tOk)tickets=_conservarPendientesMob(_mapTicketsMob(rawT,tickets),tickets);
         if(aOk)activos=rawA.map(r=>({...r,id:r.codigo,valor:parseFloat(r.valor)||0,vida:parseInt(r.vida)||3,historial:parseHist(r.historial)}));
         if(rawDep)departamentos=rawDep.map(r=>({...r}));
         if(rawEsp)espacios=rawEsp.map(r=>({...r}));
@@ -1484,7 +1626,7 @@ async function cargarDatosPostLogin(){
     ], 3, 100);
     const tFalla = rawT===null || _listaVaciaSospechosa(rawT, tickets);
     const aFalla = rawA===null || _listaVaciaSospechosa(rawA, activos);
-    if(!tFalla){tickets=rawT.map(r=>({...r,id:r.codigo,avance:parseInt(r.avance)||0,historial:parseHist(r.historial)}));cntTickets=tickets.length;}
+    if(!tFalla){tickets=_conservarPendientesMob(_mapTicketsMob(rawT,tickets),tickets);cntTickets=tickets.length;}
     if(!aFalla){activos=rawA.map(r=>({...r,id:r.codigo,valor:parseFloat(r.valor)||0,vida:parseInt(r.vida)||3,historial:parseHist(r.historial)}));}
     saveCache();
     const fallaron=[];
@@ -1858,6 +2000,16 @@ function puedeTomar(t){
   if(_respLibre_(t.resp)) return true;
   return session.rol==="admin" || PERMITIR_REASIGNACION_TECNICOS;
 }
+function _marcaGuardadoMob(o, tipo){
+  if(o._guardando) return '<div class="marca-guardando" style="margin-top:6px;font-size:11px;font-weight:700;color:#8A6A00">⏳ Guardando…</div>';
+  if(o._errGuardado){
+    const c=_jsArg(o.codigo);
+    return '<div class="marca-error" style="margin-top:6px;font-size:11px;font-weight:700;color:#991B1B">⚠ No se guardó · '
+      +'<button onclick="reintentarGuardadoMob(\''+tipo+'\',\''+c+'\',event)" style="background:#991B1B;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer">Reintentar</button> '
+      +'<button onclick="descartarGuardadoMob(\''+tipo+'\',\''+c+'\',event)" style="background:#E5E7EB;color:#374151;border:none;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer">Descartar</button></div>';
+  }
+  return '';
+}
 function tktCardHTML(t){
   const dias = t.dead && t.dead!=="—"
     ? Math.ceil((new Date(t.dead)-new Date())/(24*3600*1000))
@@ -1878,6 +2030,7 @@ function tktCardHTML(t){
       <span class="tkt-code">${_escHtml(t.codigo)}</span>
       <span style="font-size:11px;color:var(--text3)">👤 ${_escHtml(t.resp||"—")}</span>
     </div>
+    ${_marcaGuardadoMob(t,'tkt')}
     ${puedeTomar(t) ?
       `<button onclick="tomarTicket('${_jsArg(t.codigo)}',event)"
         style="width:100%;margin-top:8px;background:${_respLibre_(t.resp)?"#1B3A6B":"#8A6A00"};color:#fff;border:none;
@@ -1934,6 +2087,9 @@ async function tomarTicket(codigo, e){
   if(esMiTicket(t)){
     showToast('Ya eres el responsable',''); return;
   }
+  if(t._guardando || t._errGuardado){
+    showToast('Este ticket tiene un guardado pendiente. Espera o reinténtalo antes de tomarlo.',''); return;
+  }
   if(!puedeTomar(t)){
     showToast('No tienes permiso para reasignar este ticket','error'); return;
   }
@@ -1943,6 +2099,10 @@ async function tomarTicket(codigo, e){
     ? '¿Tomar el ticket '+codigo+'?\n\n"'+t.titulo+'"\n\nQuedarás como responsable y se notificará a todos.'
     : '¿Tomar el ticket '+codigo+'?\n\n"'+t.titulo+'"\n\nResponsable actual: '+respAnterior+'\nQuedarás tú como nuevo responsable.';
   if(!confirm(msg)) return;
+  if(t._histLigero && !(await _completarHistorialTicketMob(t))){
+    showToast('⚠ No se pudo cargar el historial completo del ticket, así que no se guardó para no perder eventos. Intenta de nuevo.','error');
+    return;
+  }
   const estadoAntes = t.estado;
   const ahora = ts();
   t.resp   = _limpiarNombre_(session.nombre);   /* v2.4: se guarda normalizado */
@@ -2017,6 +2177,30 @@ function updateBadge(){
   badge.textContent = pendientes;
   badge.style.display = pendientes > 0 ? "flex" : "none";
 }
+/* v4.3: el historial de la hoja se dibuja aparte para poder reemplazarlo cuando
+   llega el detalle completo (ticket_detail) sin mover el resto de la hoja. */
+function _histSheetHTML(t, cargando, fallo){
+  const total = (t._histLigero && t._histTotal) ? t._histTotal : (t.historial||[]).length;
+  const aviso = cargando
+    ? '<div id="sheet-hist-cargando" style="font-size:12px;color:#8A6A00;background:#FEF3C7;border-radius:8px;padding:8px 10px;margin-bottom:8px">⏳ Cargando el historial completo ('+_escHtml(total)+' eventos)…</div>'
+    : (fallo ? '<div style="font-size:12px;color:#991B1B;background:#FEE2E2;border-radius:8px;padding:8px 10px;margin-bottom:8px">⚠ No se pudo cargar el historial completo. Se muestran los eventos más recientes.</div>' : '');
+  return `
+    <div style="margin-top:16px;font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">
+      Historial de seguimiento (${_escHtml(total)} eventos)
+    </div>
+    ${aviso}
+    ${(t.historial||[]).slice().reverse().map(h=>{
+      const bgColor=h.color==='green'?'#DCFCE7':h.color==='blue'?'#DBEAFE':h.color==='red'?'#FEE2E2':'#FEF3C7';
+      const dotColor=h.color==='green'?'#166534':h.color==='blue'?'#1E40AF':h.color==='red'?'#991B1B':'#92400E';
+      return '<div class="hist-item" style="background:'+_escHtml(bgColor)+';border-radius:8px;padding:8px 10px;margin-bottom:6px">'
+        +'<div class="hist-dot '+( _escHtml(h.color||"navy"))+'" style="background:'+_escHtml(dotColor)+'"></div>'
+        +'<div style="flex:1"><div class="hist-tipo" style="color:'+_escHtml(dotColor)+';font-weight:700">'+_escHtml(h.tipo||'')+'</div>'
+        +'<div class="hist-desc" style="color:#374151;margin-top:2px">'+_escHtml(h.desc||'')+'</div>'
+        +'<div class="hist-ts" style="color:#6B7280;margin-top:3px">'+_escHtml(h.fecha||"")+(_escHtml(h.usuario?' · '+sanitizeHTML(h.usuario):''))+'</div></div>'
+        +'</div>';
+    }).join("")||'<div style="font-size:12px;color:var(--text3)">Sin historial registrado</div>'}
+  `;
+}
 function openTicketSheet(codigo){
   const t = tickets.find(x => x.codigo === codigo);
   if(!t) return;
@@ -2051,25 +2235,25 @@ function openTicketSheet(codigo){
     ${t.dead&&t.dead!=="—"?`<div class="det-field"><div class="det-field-label">Deadline</div><div class="det-field-val">${_escHtml(t.dead)}</div></div>`:""}
     ${actNombre?`<div class="det-field"><div class="det-field-label">Activo vinculado</div><div class="det-field-val">📦 ${_escHtml(actNombre)}</div></div>`:""}
     ${t.desc?`<div class="det-field"><div class="det-field-label">Descripción</div><div class="det-field-val" style="white-space:pre-wrap">${_escHtml(t.desc)}</div></div>`:""}
-    <div style="margin-top:16px;font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">
-      Historial de seguimiento (${(t.historial||[]).length} eventos)
-    </div>
-    ${(t.historial||[]).slice().reverse().map(h=>{
-      const bgColor=h.color==='green'?'#DCFCE7':h.color==='blue'?'#DBEAFE':h.color==='red'?'#FEE2E2':'#FEF3C7';
-      const dotColor=h.color==='green'?'#166534':h.color==='blue'?'#1E40AF':h.color==='red'?'#991B1B':'#92400E';
-      return '<div class="hist-item" style="background:'+_escHtml(bgColor)+';border-radius:8px;padding:8px 10px;margin-bottom:6px">'
-        +'<div class="hist-dot '+( _escHtml(h.color||"navy"))+'" style="background:'+_escHtml(dotColor)+'"></div>'
-        +'<div style="flex:1"><div class="hist-tipo" style="color:'+_escHtml(dotColor)+';font-weight:700">'+_escHtml(h.tipo||'')+'</div>'
-        +'<div class="hist-desc" style="color:#374151;margin-top:2px">'+_escHtml(h.desc||'')+'</div>'
-        +'<div class="hist-ts" style="color:#6B7280;margin-top:3px">'+_escHtml(h.fecha||"")+(_escHtml(h.usuario?' · '+sanitizeHTML(h.usuario):''))+'</div></div>'
-        +'</div>';
-    }).join("")||'<div style="font-size:12px;color:var(--text3)">Sin historial registrado</div>'}
+    <div id="sheet-hist">${_histSheetHTML(t, !!t._histLigero, false)}</div>
   `;
   document.getElementById("sheet-body").innerHTML = sanitizeHTML(sheetHTML);
   document.getElementById("sheet-overlay").classList.add("open");
   document.getElementById("ticket-sheet").classList.add("open");
+  window._sheetTktCodigo = codigo;
+  // v4.3: la lista trae el historial recortado; el detalle completo se pide al abrir.
+  if(t._histLigero){
+    _completarHistorialTicketMob(t).then(ok=>{
+      const caja = document.getElementById("sheet-hist");
+      const abierta = document.getElementById("ticket-sheet").classList.contains("open") && window._sheetTktCodigo===codigo;
+      if(!abierta || !caja) return;
+      caja.innerHTML = sanitizeHTML(_histSheetHTML(t, false, !ok));
+      if(!ok) showToast('No se pudo cargar el historial completo','error');
+    });
+  }
 }
 function closeSheet(){
+  window._sheetTktCodigo = null;
   document.getElementById("sheet-overlay").classList.remove("open");
   document.getElementById("ticket-sheet").classList.remove("open");
 }
@@ -2256,6 +2440,7 @@ function agregarFotoTicketMobile(){
 }
 function quickEstado(codigo){
   const t=tickets.find(x=>x.codigo===codigo);if(!t)return;
+  _completarHistorialTicketMob(t);
   closeSheet();
   const overlay=document.getElementById("modal-overlay");
   const modal=document.getElementById("modal-ticket");
@@ -2283,6 +2468,7 @@ function quickEstado(codigo){
 }
 function quickAvance(codigo){
   const t=tickets.find(x=>x.codigo===codigo);if(!t)return;
+  _completarHistorialTicketMob(t);
   closeSheet();
   document.getElementById("modal-title").textContent="Actualizar avance";
   document.getElementById("mt-id").value=codigo;
@@ -2349,6 +2535,7 @@ function openNuevoTicket(){
 }
 function openEditTicket(codigo){
   const t=tickets.find(x=>x.codigo===codigo);if(!t)return;
+  _completarHistorialTicketMob(t);
   document.getElementById("modal-title").textContent="Editar ticket";
   document.getElementById("mt-id").value=codigo;
   document.getElementById("mt-titulo").value=t.titulo||"";
@@ -2442,6 +2629,7 @@ async function _devolverEquipoAlCerrarTicket(t, estadoAntes){
   if(t.tipo!=='mantenimiento' || !t.activoId) return null;
   const act = activos.find(a=>a.codigo===t.activoId);
   if(!act || act.estado!=='mantenimiento') return null;
+  if(!(await _completarActivoMob(act))) return {error:true};
   const otro = tickets.find(x=>x.codigo!==t.codigo && x.activoId===act.codigo && x.tipo==='mantenimiento' && !['cerrado','eliminado'].includes(x.estado));
   if(otro) return {sigue:true, otro:otro.codigo};
   const hist = parseHist(act.historial);
@@ -2460,7 +2648,7 @@ async function _devolverEquipoAlCerrarTicket(t, estadoAntes){
     devueltoANombre:retira, condicion:cond, asignadoA:act.asignado||'—', ticket:t.codigo,
     fecha:ts(), usuario:session.nombre, color:'green'
   }];
-  const res = await apiPostAsync('activos','update',act,60000);
+  const res = await apiPostAsync('activos','update',_payloadMob(act),60000);
   if(!res || res.ok===false){ act.estado = estadoPrevio; act.historial = histPrevio; return {error:true}; }
   await apiPost("auditoria","insert",{ts:ts(),usuario:session.username,nombre:session.nombre,rol:session.rol,accion:"EDITAR",tipo:"Activo",codigo:act.codigo,detalle:"Salida de mantenimiento al cerrar el ticket "+t.codigo+" | App Móvil"});
   return {devuelto:true, codigo:act.codigo};
@@ -2497,9 +2685,10 @@ async function _propagarSolicitudPiezasAlActivo(activoId, entry){
   if(!activoId) return;
   const a = activos.find(x=>x.codigo===activoId);
   if(!a) return;
-  a.historial = a.historial || [];
+  if(!(await _completarActivoMob(a))) return;
+  a.historial = parseHist(a.historial);
   a.historial.push({...entry});
-  await apiPost("activos","update",a);
+  await apiPost("activos","update",_payloadMob(a));
 }
 let _mobSaveOverlay = null;
 function mostrarGuardandoMob(mensaje){
@@ -2521,6 +2710,10 @@ function mostrarGuardandoMob(mensaje){
 function ocultarGuardandoMob(){
   if(_mobSaveOverlay){ _mobSaveOverlay.remove(); _mobSaveOverlay=null; }
 }
+/* v4.3 (B1/G1): guardado optimista. El botón se deshabilita con indicador desde el
+   primer clic, la hoja se cierra de inmediato, la tarjeta muestra "⏳ Guardando…" y
+   la confirmación llega en segundo plano. Si falla: "⚠ No se guardó · Reintentar" y
+   el borrador (con el mismo _opId) se conserva en memoria. */
 async function saveTicket(){
   if(window._savingTicket){ showToast('El ticket se está guardando, espera...',''); return; }
   const titulo=document.getElementById("mt-titulo").value.trim();
@@ -2533,13 +2726,22 @@ async function saveTicket(){
     showToast("El motivo es obligatorio","error");return;
   }
   window._savingTicket = true;
-  mostrarGuardandoMob(isEdit?'Guardando cambios...':'Creando ticket...');
+  const btnGuardar = document.getElementById("mt-save-btn");
+  _spinnerBtnMob(btnGuardar, true, isEdit?'Guardando…':'Creando…');
   try{
   if(isEdit){
     const motivo=document.getElementById("mt-motivo").value.trim();
     const t=tickets.find(x=>x.codigo===editId);if(!t)return;
+    if(t._guardando){ showToast('Este ticket aún se está guardando. Espera un momento.',''); return; }
+    // La lista llega recortada (modo liviano): se completa el historial antes de
+    // editar, para no mandar al servidor una copia parcial como si fuera completa.
+    if(t._histLigero && !(await _completarHistorialTicketMob(t))){
+      showToast('⚠ No se pudo cargar el historial completo del ticket, así que no se guardó para no perder eventos. Intenta de nuevo en unos segundos.','error');
+      return;
+    }
     const estadoAntes=t.estado;
     const respAntes=t.resp;
+    const prev={...t, historial:(t.historial||[]).slice()};
     t.titulo=titulo;
     t.resp=document.getElementById("mt-resp")?.value||t.resp;
     t.tipo=document.getElementById("mt-tipo").value;
@@ -2550,7 +2752,7 @@ async function saveTicket(){
     t.desc=document.getElementById("mt-desc").value.trim();
     t.foto=_mtFotosActuales.length?_mtFotosActuales[0].url:"—";
     t.fotos=JSON.stringify(_mtFotosActuales);
-    t.historial=t.historial||[];
+    t.historial=(t.historial||[]).slice();
     const eventosM = [];
     if(estadoAntes !== t.estado) eventosM.push('Estado: '+estadoAntes+' → '+t.estado);
     if(respAntes !== t.resp) eventosM.push('Responsable: '+respAntes+' → '+t.resp);
@@ -2576,70 +2778,101 @@ async function saveTicket(){
     // El pedido de piezas va de ULTIMO: el backend mira el último evento del
     // historial para decidir si manda el correo al encargado de compras.
     if(solicitudPiezas) t.historial.push(solicitudPiezas);
-    await apiPost("tickets","update",{...t, _fotosQuitar:_mtFotosQuitar.slice()});
+    const payload=_payloadMob(t,{_fotosQuitar:_mtFotosQuitar.slice(), _opId:_generarOpId()});
     _mtFotosQuitar=[];
-    if(solicitudPiezas) await _propagarSolicitudPiezasAlActivo(t.activoId, solicitudPiezas);
-    // Si el ticket de mantenimiento se cerró, el equipo vuelve a estar disponible.
-    const dev = await _devolverEquipoAlCerrarTicket(t, estadoAntes);
-    await apiPost("auditoria","insert",{ts:ts(),usuario:session.username,nombre:session.nombre,rol:session.rol,accion:"EDITAR",tipo:"Ticket",codigo:t.codigo,detalle:`Motivo: ${motivo}${solicitudPiezas?" | Solicitud de compra":""} | App Móvil`});
-    showToast("Ticket actualizado"+(solicitudPiezas?" + solicitud de compra":"")+(dev&&dev.devuelto?" · equipo devuelto de mantenimiento":"")+" ✓","success");
-    if(dev && dev.sigue) showToast("ℹ El equipo sigue en mantenimiento: tiene otro ticket abierto ("+dev.otro+")","");
-    else if(dev && dev.error) showToast("⚠ El ticket se cerró, pero no se pudo devolver el equipo de mantenimiento. Edítelo y cámbiele el estado.","error");
-  } else {
-    const _sfxM = Date.now().toString(36).toUpperCase().slice(-4)
-               + Math.random().toString(36).toUpperCase().slice(2,4);
-    const code = 'TKT-P'+_sfxM;
-    const aId=document.getElementById("mt-activo").value;
-    const aNom=aId?(activos.find(a=>a.codigo===aId)||{nombre:"—"}).nombre:"—";
-    const respSelected = document.getElementById("mt-resp")?.value || session.nombre;
-    const histInicial=[{tipo:"Creación",desc:"Creado desde app móvil por "+session.nombre,fecha:ts(),usuario:session.nombre,color:"green"}];
-    if(solicitudPiezas) histInicial.push(solicitudPiezas);
-    const t={id:code,codigo:code,titulo,activoId:aId||"",activoNombre:aNom,resp:respSelected,tipo:document.getElementById("mt-tipo").value,prior:document.getElementById("mt-prior").value,estado:document.getElementById("mt-estado").value,avance:parseInt(document.getElementById("mt-avance").value)||0,dead:document.getElementById("mt-dead").value||"—",proy:"—",desc:document.getElementById("mt-desc").value.trim(),foto:_mtFotosActuales.length?_mtFotosActuales[0].url:"—",fotos:JSON.stringify(_mtFotosActuales),historial:histInicial,fechaCreacion:ts()};
-    const codigosAntesM = new Set(tickets.map(x=>x.codigo));
-    tickets.push(t);
-    let resM = await apiPostAsync("tickets","insert",t,60000);
+    t._guardando=true; delete t._errGuardado;
+    _borradoresMob.set('tkt:'+t.codigo,{tipo:'edit',codigo:t.codigo,payload,prev,estadoAntes,motivo,solicitudPiezas});
+    closeModal();
+    renderTickets(); renderDashboard();
+    _enviarTicketMob(t.codigo);
+    return;
+  }
+  // ── Ticket nuevo ──
+  const _sfxM = Date.now().toString(36).toUpperCase().slice(-4)
+             + Math.random().toString(36).toUpperCase().slice(2,4);
+  const code = 'TKT-P'+_sfxM;
+  const aId=document.getElementById("mt-activo").value;
+  const aNom=aId?(activos.find(a=>a.codigo===aId)||{nombre:"—"}).nombre:"—";
+  const respSelected = document.getElementById("mt-resp")?.value || session.nombre;
+  const histInicial=[{tipo:"Creación",desc:"Creado desde app móvil por "+session.nombre,fecha:ts(),usuario:session.nombre,color:"green"}];
+  if(solicitudPiezas) histInicial.push(solicitudPiezas);
+  const t={id:code,codigo:code,titulo,activoId:aId||"",activoNombre:aNom,resp:respSelected,tipo:document.getElementById("mt-tipo").value,prior:document.getElementById("mt-prior").value,estado:document.getElementById("mt-estado").value,avance:parseInt(document.getElementById("mt-avance").value)||0,dead:document.getElementById("mt-dead").value||"—",proy:"—",desc:document.getElementById("mt-desc").value.trim(),foto:_mtFotosActuales.length?_mtFotosActuales[0].url:"—",fotos:JSON.stringify(_mtFotosActuales),historial:histInicial,fechaCreacion:ts()};
+  const recepM = _mtLeerRecepcion();
+  const codigosAntes = new Set(tickets.map(x=>x.codigo));
+  const payload=_payloadMob(t,{_opId:_generarOpId()});
+  t._guardando=true; t._temporal=true;
+  tickets.push(t);
+  _borradoresMob.set('tkt:'+code,{tipo:'insert',codigo:code,payload,solicitudPiezas,recepM,aId,titulo,respSelected,codigosAntes});
+  closeModal();
+  renderTickets(); renderDashboard();
+  _enviarTicketMob(code);
+  }catch(err){
+    showToast("⚠ Error al guardar: "+(err&&err.message?err.message:"desconocido"),"error");
+  }finally{
+    window._savingTicket = false;
+    _spinnerBtnMob(btnGuardar, false);
+  }
+}
+function _marcarErrorGuardadoMob(o, res, quien){
+  delete o._guardando; o._errGuardado = true;
+  if(typeof renderTickets==='function') { renderTickets(); renderDashboard(); renderActivos(); }
+  showToast('⚠ No se guardó '+quien+': '+_msgServidor(res,'sin respuesta')+'. Toca «Reintentar» en la tarjeta.','error',5000);
+}
+/* Segundo plano: envía el ticket (alta o edición) y muestra el resultado real. */
+async function _enviarTicketMob(codigo){
+  const w=_borradoresMob.get('tkt:'+codigo); if(!w) return;
+  const t=tickets.find(x=>x.codigo===codigo); if(!t){ _borradoresMob.delete('tkt:'+codigo); return; }
+  try{
+    if(w.tipo==='edit'){
+      const res = await apiPostAsync('tickets','update',w.payload,60000);
+      if(!res || res.ok===false){ _marcarErrorGuardadoMob(t,res,'el ticket '+codigo); return; }
+      delete t._guardando; delete t._errGuardado; _borradoresMob.delete('tkt:'+codigo);
+      if(w.solicitudPiezas) await _propagarSolicitudPiezasAlActivo(t.activoId, w.solicitudPiezas);
+      // Si el ticket de mantenimiento se cerró, el equipo vuelve a estar disponible.
+      const dev = await _devolverEquipoAlCerrarTicket(t, w.estadoAntes);
+      await apiPost("auditoria","insert",{ts:ts(),usuario:session.username,nombre:session.nombre,rol:session.rol,accion:"EDITAR",tipo:"Ticket",codigo:t.codigo,detalle:`Motivo: ${w.motivo}${w.solicitudPiezas?" | Solicitud de compra":""} | App Móvil`});
+      saveCache(); renderTickets(); renderDashboard(); updateBadge();
+      showToast("Ticket "+t.codigo+" actualizado"+(w.solicitudPiezas?" + solicitud de compra":"")+(dev&&dev.devuelto?" · equipo devuelto de mantenimiento":"")+" ✓","success");
+      if(dev && dev.sigue) showToast("ℹ El equipo sigue en mantenimiento: tiene otro ticket abierto ("+dev.otro+")","");
+      else if(dev && dev.error) showToast("⚠ El ticket se cerró, pero no se pudo devolver el equipo de mantenimiento. Edítelo y cámbiele el estado.","error");
+      return;
+    }
+    // ── alta ──
+    let resM = await apiPostAsync("tickets","insert",w.payload,60000);
     if(resM && resM.ok===false && resM.error==='TIMEOUT'){
-      tickets = tickets.filter(x=>x.codigo!==code);
-      showToast("⏱ No se pudo confirmar. Verificando si el ticket se creó...","error");
-      // Se recarga la lista y se BUSCA el ticket entre los códigos que no
-      // existían antes. Si aparece, se trata como creado (con su código real);
-      // si no, se avisa de revisar la lista antes de repetir (evita duplicados).
-      const _buscarM = async ()=>{
+      // Se BUSCA el ticket entre los códigos que no existían antes. Si aparece, se
+      // trata como creado; si no, queda el reintento (mismo _opId: no duplica).
+      let hallado=null;
+      for(let i=0;i<2 && !hallado;i++){
+        if(i) await new Promise(r=>setTimeout(r,5000));
         try{
           const raw = await apiGet("tickets");
           if(Array.isArray(raw) && raw.length){
-            tickets = raw.map(r=>({...r, id:r.codigo, avance:parseInt(r.avance)||0, historial:parseHist(r.historial)}));
+            hallado = raw.find(x=>x && x.codigo && !w.codigosAntes.has(x.codigo)
+                                 && x.titulo===w.titulo && (x.resp||"—")===(w.payload.resp||"—")) || null;
           }
         }catch(e){}
-        return tickets.find(x=>x && x.codigo && !codigosAntesM.has(x.codigo)
-                                && x.titulo===t.titulo && (x.resp||"—")===(t.resp||"—")) || null;
-      };
-      let halladoM = await _buscarM();
-      if(!halladoM){ await new Promise(r=>setTimeout(r,5000)); halladoM = await _buscarM(); }
-      if(!halladoM){
-        saveCache(); renderTickets(); renderDashboard();
-        showToast("⚠ No se pudo confirmar si el ticket se creó. Revise la lista ANTES de volver a guardar.","error");
-        return;
       }
-      tickets = tickets.filter(x=>x.codigo!==halladoM.codigo);
-      tickets.push(t);
-      resM = {ok:true, codigo:halladoM.codigo};
+      if(hallado) resM={ok:true,codigo:hallado.codigo};
     }
-    if(resM && resM.ok===false){
-      tickets = tickets.filter(x=>x.codigo!==code);
-      showToast("⚠ No se pudo crear el ticket: "+_msgServidor(resM,"error"),"error");
-      return;
-    }
-    const codigoRealM = (resM && resM.codigo) ? resM.codigo : code;
+    if(!resM || resM.ok===false){ _marcarErrorGuardadoMob(t,resM,'el ticket nuevo'); return; }
+    const codigoRealM = (resM && resM.codigo) ? resM.codigo : codigo;
+    _borradoresMob.delete('tkt:'+codigo);
+    // si el sondeo ya trajo el ticket con su código real, se quita la copia duplicada
+    tickets = tickets.filter(x=>x===t || x.codigo!==codigoRealM);
     t.codigo = codigoRealM; t.id = codigoRealM;
-    const recepM = _mtLeerRecepcion();
+    delete t._guardando; delete t._temporal; delete t._errGuardado;
+    saveCache(); renderTickets(); renderDashboard(); updateBadge();
+    showToast(resM && resM.duplicadoEvitado
+      ? "Ya estaba registrado como "+codigoRealM+" — no se duplicó"
+      : "Ticket "+codigoRealM+" creado ✓","success");
+    const recepM=w.recepM, aId=w.aId, titulo=w.titulo, respSelected=w.respSelected, solicitudPiezas=w.solicitudPiezas;
     // Vincular el activo con el código real y, si el ticket es de mantenimiento,
-    // dejar constancia de que el equipo entró a custodia de IT. Hasta ahora el
-    // módulo móvil no tocaba el activo al crear el ticket.
+    // dejar constancia de que el equipo entró a custodia de IT.
     if(aId){
       const act = activos.find(a=>a.codigo===aId);
-      if(act){
-        act.historial = act.historial || [];
+      if(act && await _completarActivoMob(act)){
+        act.historial = parseHist(act.historial);
         act.historial.push({tipo:'Ticket vinculado',desc:codigoRealM+': '+titulo,fecha:ts(),usuario:session.nombre,color:'blue'});
         if(t.tipo==='mantenimiento'){
           act.estado = 'mantenimiento';
@@ -2656,7 +2889,7 @@ async function saveTicket(){
             fecha:     ts(), usuario: session.nombre, color: 'amber'
           });
         }
-        await apiPost('activos','update',act);
+        await apiPost('activos','update',_payloadMob(act));
       }
     }
     // Sin activo vinculado la constancia vive en el ticket. Se manda como
@@ -2684,24 +2917,14 @@ async function saveTicket(){
       }
       if(evM.length){
         t.historial = t.historial.concat(evM);
-        await apiPost('tickets','update',t);
+        const r2 = await apiPostAsync('tickets','update',_payloadMob(t),60000);
+        if(!r2 || r2.ok===false) showToast('⚠ El ticket se creó, pero no se registró la constancia de recepción o la solicitud de compra. Edítelo y vuelva a registrarla.','error',6000);
       }
     }
     if(solicitudPiezas) await _propagarSolicitudPiezasAlActivo(t.activoId, solicitudPiezas);
     await apiPost("auditoria","insert",{ts:ts(),usuario:session.username,nombre:session.nombre,rol:session.rol,accion:"CREAR",tipo:"Ticket",codigo:codigoRealM,detalle:"Creado desde app móvil: "+titulo+(solicitudPiezas?" | Solicitud de compra":"")});
-    showToast(resM && resM.duplicadoEvitado
-      ? "Ya estaba registrado como "+codigoRealM+" — no se duplicó"
-      : "Ticket "+codigoRealM+" creado ✓","success");
-  }
-  saveCache();
-  closeModal();
-  renderTickets();
-  renderDashboard();
   }catch(err){
-    showToast("⚠ Error al guardar: "+(err&&err.message?err.message:"desconocido"),"error");
-  }finally{
-    window._savingTicket = false;
-    ocultarGuardandoMob();
+    _marcarErrorGuardadoMob(t,{message:err&&err.message},'el ticket '+codigo);
   }
 }
 function closeModal(){
@@ -2728,6 +2951,7 @@ function renderActivos(){
         <span>👤 ${_escHtml(a.asignado||"—")}</span>
         ${a.garantia&&a.garantia!=="—"?`<span>🛡️ ${_escHtml(a.garantia)}</span>`:""}
       </div>
+      ${_marcaGuardadoMob(a,'act')}
     </div>`).join("");
   list.innerHTML=sanitizeHTML(activosHTML);
 }
@@ -2872,15 +3096,18 @@ function _resetMobPiezasTicket(){
   });
   const u = document.getElementById("mt-piezas-urgencia"); if(u) u.value="normal";
 }
+function _mapActivosMob(raw){
+  return raw.map(r=>({...r,id:r.codigo,valor:parseFloat(r.valor)||0,vida:parseInt(r.vida)||3,historial:parseHist(r.historial)}));
+}
 async function saveMant(){
   if(!activoDetalle) return;
+  const a=activoDetalle;
+  if(a._guardando){ showToast('Este activo aún se está guardando. Espera un momento.',''); return; }
   const desc=document.getElementById("mm-desc").value.trim();
   if(!desc){showToast("La descripción es obligatoria","error");return;}
   const emailResp=(document.getElementById("mm-email-resp")?.value||"").trim();
-  const e={tipo:document.getElementById("mm-tipo").value,desc,fecha:document.getElementById("mm-fecha").value||ts(),tec:session.nombre,costo:parseFloat(document.getElementById("mm-costo").value)||0,usuario:session.nombre,emailResp,asignadoA:activoDetalle?.asignado||"—",fotos:_mmFotosActuales.length?_mmFotosActuales:undefined,color:"amber"};
-  activoDetalle.historial=activoDetalle.historial||[];
-  activoDetalle.historial.push(e);
   const necesitaPiezas=document.getElementById("mm-necesita-piezas")?.checked;
+  let evPiezas=null;
   if(necesitaPiezas){
     const piezasDesc=document.getElementById("mm-piezas-desc")?.value.trim();
     const emailCompras=document.getElementById("mm-piezas-email")?.value.trim();
@@ -2888,17 +3115,96 @@ async function saveMant(){
     const presupuesto=parseFloat(document.getElementById("mm-piezas-presupuesto")?.value)||0;
     if(!piezasDesc){showToast("Describe las piezas necesarias","error");return;}
     if(!emailCompras){showToast("El correo del encargado es obligatorio","error");return;}
-    activoDetalle.historial.push({tipo:"Solicitud de Compra",desc:`Piezas: ${piezasDesc}. Urgencia: ${urgencia}. Presupuesto: $${presupuesto||"TBD"}. Solicita: ${session.nombre}. Email: ${emailCompras}.`,fecha:ts(),usuario:session.nombre,tec:session.nombre,piezas:piezasDesc,urgencia,presupuesto,emailCompras,estado:"pendiente",color:"red"});
+    evPiezas={tipo:"Solicitud de Compra",desc:`Piezas: ${piezasDesc}. Urgencia: ${urgencia}. Presupuesto: $${presupuesto||"TBD"}. Solicita: ${session.nombre}. Email: ${emailCompras}.`,fecha:ts(),usuario:session.nombre,tec:session.nombre,piezas:piezasDesc,urgencia,presupuesto,emailCompras,estado:"pendiente",color:"red"};
   }
-  await apiPost("activos","update",activoDetalle);
-  await apiPost("auditoria","insert",{ts:ts(),usuario:session.username,nombre:session.nombre,rol:session.rol,accion:"CREAR",tipo:"Mantenimiento",codigo:activoDetalle.codigo,detalle:`${e.tipo}: ${e.desc}${necesitaPiezas?" | Solicitud de compra":""} | App Móvil`});
-  saveCache();
-  ["mm-desc","mm-fecha","mm-costo","mm-email-resp","mm-piezas-desc","mm-piezas-email","mm-piezas-presupuesto"].forEach(id=>{const el=document.getElementById(id);if(el)el.value="";});
-  const chk=document.getElementById("mm-necesita-piezas");if(chk){chk.checked=false;toggleMobPiezas(false);}
-  _mmFotosActuales = [];
-  _renderGaleriaFotosMant();
-  showToast("Mantenimiento registrado"+(necesitaPiezas?" + solicitud de compra":"")+" ✓","success");
-  closeMant();closeSheet();renderActivos();
+  const btn=document.getElementById("mm-save-btn");
+  _spinnerBtnMob(btn,true,'Guardando…');
+  try{
+    if(a._histLigero && !(await _completarActivoMob(a))){
+      showToast('⚠ No se pudo cargar el historial completo del activo, así que no se guardó para no perder eventos. Intenta de nuevo.','error');
+      return;
+    }
+    const e={tipo:document.getElementById("mm-tipo").value,desc,fecha:document.getElementById("mm-fecha").value||ts(),tec:session.nombre,costo:parseFloat(document.getElementById("mm-costo").value)||0,usuario:session.nombre,emailResp,asignadoA:a.asignado||"—",fotos:_mmFotosActuales.length?_mmFotosActuales:undefined,color:"amber"};
+    const prev={...a, historial:parseHist(a.historial).slice()}; delete prev._errGuardado;
+    a.historial=parseHist(a.historial).slice();
+    a.historial.push(e);
+    if(evPiezas) a.historial.push(evPiezas);
+    const payload=_payloadMob(a,{_opId:_generarOpId()});
+    a._guardando=true; delete a._errGuardado;
+    _borradoresMob.set('act:'+a.codigo,{tipo:'mant',codigo:a.codigo,payload,prev,
+      aud:{accion:"CREAR",tipo:"Mantenimiento",detalle:`${e.tipo}: ${e.desc}${necesitaPiezas?" | Solicitud de compra":""} | App Móvil`},
+      okMsg:"Mantenimiento registrado"+(necesitaPiezas?" + solicitud de compra":"")+" ✓"});
+    ["mm-desc","mm-fecha","mm-costo","mm-email-resp","mm-piezas-desc","mm-piezas-email","mm-piezas-presupuesto"].forEach(id=>{const el=document.getElementById(id);if(el)el.value="";});
+    const chk=document.getElementById("mm-necesita-piezas");if(chk){chk.checked=false;toggleMobPiezas(false);}
+    _mmFotosActuales = [];
+    _renderGaleriaFotosMant();
+    closeMant();closeSheet();renderActivos();
+    _enviarActivoMob(a.codigo);
+  }finally{
+    _spinnerBtnMob(btn,false);
+  }
+}
+/* Segundo plano: envía el activo (alta, edición o mantenimiento) y muestra el resultado real. */
+async function _enviarActivoMob(codigo){
+  const w=_borradoresMob.get('act:'+codigo); if(!w) return;
+  const a=activos.find(x=>x.codigo===codigo); if(!a){ _borradoresMob.delete('act:'+codigo); return; }
+  try{
+    let res = await apiPostAsync('activos', w.tipo==='insert'?'insert':'update', w.payload, 60000);
+    if(w.tipo==='insert' && res && res.ok===false && res.error==='TIMEOUT'){
+      // ¿llegó a crearse? Se busca entre los códigos que no existían antes (el reintento usa el mismo _opId).
+      for(let i=0;i<2 && !(res&&res.ok);i++){
+        if(i) await new Promise(r=>setTimeout(r,5000));
+        try{
+          const raw=await apiGet('activos');
+          const h=(Array.isArray(raw)&&!raw._failed)?raw.find(x=>x&&x.codigo&&!w.codigosAntes.has(x.codigo)&&x.nombre===w.payload.nombre):null;
+          if(h) res={ok:true,codigo:h.codigo};
+        }catch(e){}
+      }
+    }
+    if(!res || res.ok===false){ _marcarErrorGuardadoMob(a,res,'el activo'); return; }
+    _borradoresMob.delete('act:'+codigo);
+    delete a._guardando; delete a._errGuardado; delete a._temporal;
+    const codReal = (w.tipo==='insert' && res.codigo) ? res.codigo : codigo;
+    a.codigo=codReal; a.id=codReal;
+    // IMPORTANTE: el historial se vuelve a convertir en arreglo con la lista del servidor.
+    // Sin esto, la siguiente edición del mismo activo lo partiría en letras sueltas.
+    const rawA = await apiGet('activos');
+    if(Array.isArray(rawA) && !rawA._failed && !_listaVaciaSospechosa(rawA, activos)){
+      activos = _conservarPendientesMob(_mapActivosMob(rawA), activos);
+    }
+    saveCache(); renderActivos();
+    showMobToast(w.okMsg);
+    await apiPost('auditoria','insert',{
+      ts:new Date().toLocaleString('es-PA'), usuario:session.username, nombre:session.nombre, rol:session.rol,
+      accion:w.aud.accion, tipo:w.aud.tipo, codigo:codReal, detalle:w.aud.detalle
+    });
+  }catch(err){
+    _marcarErrorGuardadoMob(a,{message:err&&err.message},'el activo');
+  }
+}
+/* Reintentar / descartar un guardado que falló (ticket o activo). */
+function reintentarGuardadoMob(tipo, codigo, ev){
+  if(ev) ev.stopPropagation();
+  const lista = tipo==='tkt' ? tickets : activos;
+  const o = lista.find(x=>x.codigo===codigo); if(!o) return;
+  if(!_borradoresMob.has(tipo+':'+codigo)){ showToast('No hay borrador para reintentar.','error'); return; }
+  delete o._errGuardado; o._guardando = true;
+  renderTickets(); renderDashboard(); renderActivos();
+  if(tipo==='tkt') _enviarTicketMob(codigo); else _enviarActivoMob(codigo);
+}
+function descartarGuardadoMob(tipo, codigo, ev){
+  if(ev) ev.stopPropagation();
+  if(!confirm('¿Descartar los cambios que no se guardaron?')) return;
+  const w = _borradoresMob.get(tipo+':'+codigo);
+  _borradoresMob.delete(tipo+':'+codigo);
+  const quitar = (lista)=>{
+    const i = lista.findIndex(x=>x.codigo===codigo); if(i<0) return lista;
+    if(w && w.prev) lista[i] = w.prev; else lista.splice(i,1);
+    return lista;
+  };
+  if(tipo==='tkt') quitar(tickets); else quitar(activos);
+  saveCache(); renderTickets(); renderDashboard(); renderActivos(); updateBadge();
+  showToast('Cambios descartados','');
 }
 function closeMant(){
   document.getElementById("mant-overlay").classList.remove("open");
@@ -2958,10 +3264,24 @@ function confirmLogout(){
     if(confirm("¿Seguro que deseas cerrar sesión?")){ doLogout(); }
   },200);
 }
+/* v4.3 (B6): la verificación de sesión se pausa con la pantalla oculta y se
+   ejecuta al volver (si pasaron al menos 15 s desde la última). */
+let _ultimaVerifSesionMob = 0, _verifSesionEnCurso = false;
+document.addEventListener('visibilitychange', ()=>{
+  if(!document.hidden && window._sesionCheck && session && session.token && Date.now()-_ultimaVerifSesionMob > 15000){
+    _verificarSesionMob();
+  }
+});
 function iniciarControlSesionUnicaMobile(){
   clearInterval(window._sesionCheck);
-  window._sesionCheck = setInterval(async()=>{
-    if(!session||!session.token) return;
+  window._sesionCheck = setInterval(()=>{
+    if(document.hidden) return;
+    _verificarSesionMob();
+  }, 30 * 1000);
+}
+async function _verificarSesionMob(){
+    if(!session||!session.token||_verifSesionEnCurso) return;
+    _verifSesionEnCurso = true; _ultimaVerifSesionMob = Date.now();
     try{
       const r = await apiPostAsync(null,'session_check',{_sessionToken:session.token});
       if(r && r.ok){
@@ -2984,7 +3304,7 @@ function iniciarControlSesionUnicaMobile(){
       document.body.appendChild(ov);
       setTimeout(()=>{ov.remove();doLogout();}, 3000);
     }catch(e){}
-  }, 30 * 1000);
+    finally{ _verifSesionEnCurso = false; }
 }
 function doLogout(){
   if(session && session.token){
@@ -3003,6 +3323,7 @@ function doLogout(){
   session = null;
   usuarios=[];activos=[];tickets=[];departamentos=[];espacios=[];personas=[];
   borrarCacheLocal(); // v2.9: no dejar datos personales en el celular tras cerrar sesión
+  _borradoresMob.clear(); // v4.3: ni borradores pendientes en memoria
   document.getElementById("app").classList.remove("visible");
   document.getElementById("login-screen").style.display="flex";
   document.getElementById("l-user").value="";
@@ -3099,8 +3420,8 @@ window.addEventListener("offline",()=>{
   setSyncStatus(false);
 });
 if("serviceWorker" in navigator){
-  navigator.serviceWorker.register("sw.js?v=4.2").then(reg=>{
-    console.log("[SAGAE] SW registrado v4.2:", reg.scope);
+  navigator.serviceWorker.register("sw.js?v=4.3").then(reg=>{
+    console.log("[SAGAE] SW registrado v4.3:", reg.scope);
     reg.addEventListener("updatefound", ()=>{
       const newWorker = reg.installing;
       if(!newWorker) return;
@@ -3168,10 +3489,9 @@ let _mobPanelActivo    = 'dashboard';
 let _mobTicketHash     = '';
 let _mobNuevosAcum     = 0;
 const _MOB_INTERVAL = {
-  tickets:  20000,
-  kanban:   20000,
-  dashboard: 60000,
-  default:   90000
+  tickets:  45000,
+  kanban:   45000,
+  default:  120000
 };
 function _mobHash(arr){
   return arr.length+'|'+arr.map(t=>t.codigo+t.estado+(t.resp||'')+(t.avance||0)).join(',');
@@ -3203,11 +3523,7 @@ async function _ejecutarPollMob(){
     setEstadoConexion("ok");   /* v2.4: lectura exitosa = datos al día */
     const nuevoHash = _mobHash(rawT);
     if(nuevoHash === _mobTicketHash){ _programarPollMob(); return; }
-    const ticketsNuevos = rawT.map(r=>({
-      ...r, id:r.codigo,
-      avance: parseInt(r.avance)||0,
-      historial: parseHist(r.historial)
-    }));
+    const ticketsNuevos = _conservarPendientesMob(_mapTicketsMob(rawT, tickets), tickets);
     const codigosAnt = new Set(tickets.map(t=>t.codigo));
     const nuevos = ticketsNuevos.filter(t=>
       !codigosAnt.has(t.codigo) && t.estado!=='eliminado'
@@ -3408,8 +3724,13 @@ async function guardarNuevoActivoMobile(){
       if(_dup){ showMobToast('El serial "'+_ser+'" ya está registrado en '+_dup.codigo+' ('+_dup.nombre+')'); return; }
     }
   }
-  if(btn){ btn.disabled=true; btn.textContent = editCodigo ? 'Guardando cambios...' : 'Guardando...'; }
+  if(existente && existente._guardando){ showMobToast('Este activo aún se está guardando. Espera un momento.'); return; }
+  _spinnerBtnMob(btn, true, editCodigo ? 'Guardando cambios…' : 'Guardando…');
   try{
+    if(existente && existente._histLigero && !(await _completarActivoMob(existente))){
+      showMobToast('⚠ No se pudo cargar el historial completo del activo, así que no se guardó para no perder eventos. Intenta de nuevo.');
+      return;
+    }
     const nuevoAsignado = document.getElementById('mob-ea-asignado')?.value||'—';
     const historialPrevio = existente?.historial || [];
     const eventosEdicion = [];
@@ -3503,43 +3824,34 @@ async function guardarNuevoActivoMobile(){
       }],
       fechaCreacion: editCodigo ? (existente?.fechaCreacion || new Date().toLocaleString('es-PA')) : new Date().toLocaleString('es-PA')
     };
+    // v4.3 (B1/G1): guardado optimista. La hoja se cierra al instante, la tarjeta
+    // muestra "⏳ Guardando…" y el resultado real llega en segundo plano.
     const _antesCods = new Set(activos.map(a=>a.codigo));
-    let _resNuevo = null;
+    const envio = {...payload, _opId:_generarOpId()};
+    let claveLocal;
     if(editCodigo){
-      await apiPost('activos','update',payload);
+      const prev = {...existente, historial:parseHist(existente.historial).slice()};
+      delete prev._errGuardado;
+      Object.assign(existente, payload);
+      existente._guardando = true; delete existente._errGuardado;
+      claveLocal = editCodigo;
+      _borradoresMob.set('act:'+claveLocal,{tipo:'edit',codigo:claveLocal,payload:envio,prev,
+        aud:{accion:'EDITAR',tipo:'Activo',detalle:`Editado desde app móvil${eventosEdicion[0]?.tipo==='Reasignación'?' (reasignación de responsable)':''}`},
+        okMsg:'✅ Activo actualizado correctamente'});
     }else{
-      // Con respuesta confirmada (no a ciegas): se sabe si el activo se creó y con qué código.
-      _resNuevo = await apiPostAsync('activos','insert',payload,60000);
-      if(!_resNuevo || _resNuevo.ok===false){
-        if(_resNuevo && _resNuevo.error==='TIMEOUT'){
-          const _rawT = await apiGet('activos');
-          if(Array.isArray(_rawT) && !_rawT._failed) activos = _rawT.map(r=>({...r,id:r.codigo,valor:parseFloat(r.valor)||0,vida:parseInt(r.vida)||3,historial:parseHist(r.historial)}));
-          cerrarNuevoActivoMobile(); renderActivos();
-          showMobToast('⏱ El servidor tardó en confirmar. Revise la lista antes de repetirlo.');
-        }else{
-          showMobToast('⚠ No se pudo guardar el activo: '+_msgServidor(_resNuevo,'sin respuesta'));
-        }
-        return;
-      }
+      claveLocal = 'tmp-'+_generarOpId();
+      activos.push({...payload, codigo:claveLocal, id:claveLocal, valor:0, vida:3, _guardando:true, _temporal:true});
+      _borradoresMob.set('act:'+claveLocal,{tipo:'insert',codigo:claveLocal,payload:envio,codigosAntes:_antesCods,
+        aud:{accion:'CREAR',tipo:'Activo',detalle:`Registrado desde app móvil: ${nombre}`},
+        okMsg:'✅ Activo registrado correctamente'});
     }
-    // IMPORTANTE: el historial se vuelve a convertir en arreglo. Sin esto, la
-    // lista en memoria quedaba con el historial como TEXTO y la siguiente
-    // edición del mismo activo lo partía en letras sueltas.
-    const rawA = await apiGet('activos');
-    activos = (Array.isArray(rawA) && !rawA._failed && !_listaVaciaSospechosa(rawA, activos)) ? rawA.map(r=>({...r,id:r.codigo,valor:parseFloat(r.valor)||0,vida:parseInt(r.vida)||3,historial:parseHist(r.historial)})) : activos;
-    const _codAud = editCodigo || (_resNuevo && _resNuevo.codigo) || (activos.find(a=>!_antesCods.has(a.codigo) && a.nombre===nombre)||{}).codigo || 'NUEVO';
-    await apiPost('auditoria','insert',{
-      ts:new Date().toLocaleString('es-PA'), usuario:session.username, nombre:session.nombre, rol:session.rol,
-      accion: editCodigo?'EDITAR':'CREAR', tipo:'Activo', codigo: _codAud,
-      detalle: editCodigo ? `Editado desde app móvil${eventosEdicion[0]?.tipo==='Reasignación'?' (reasignación de responsable)':''}` : `Registrado desde app móvil: ${nombre}`
-    });
     cerrarNuevoActivoMobile();
     renderActivos();
-    showMobToast(editCodigo ? '✅ Activo actualizado correctamente' : '✅ Activo registrado correctamente');
+    _enviarActivoMob(claveLocal);
   }catch(e){
     showMobToast('Error: '+e.message);
   }finally{
-    if(btn){ btn.disabled=false; btn.textContent = editCodigo ? '💾 Guardar cambios' : '💾 Guardar activo'; }
+    _spinnerBtnMob(btn, false);
   }
 }
 function abrirSubidaFotoMobile(targetInputId, previewId, btnId, modulo){
