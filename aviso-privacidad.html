@@ -7,6 +7,7 @@
   <meta name="referrer" content="strict-origin-when-cross-origin">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0B1B30">
+<meta name="sagae-version-aviso" content="2.0-borrador">
 <link rel="icon" type="image/png" href="assets/favicon.png">
 <title>Aviso de Privacidad — SAGAE</title>
 <style>
@@ -24,6 +25,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;ba
 .card{background:#fff;border-radius:16px;box-shadow:0 2px 16px rgba(27,58,107,.08);padding:28px 24px;margin-bottom:18px;}
 h1{font-size:26px;line-height:1.25;color:var(--navy-d);margin-bottom:6px;}
 .meta{font-size:13px;color:var(--text3);margin-bottom:18px;}
+h3{font-size:15px;color:var(--navy-d);margin:18px 0 6px;}
+code{font-size:12.5px;background:#F2F4F8;padding:1px 4px;border-radius:4px;word-break:break-all;}
 h2{font-size:17px;color:var(--navy-d);margin:26px 0 8px;padding-top:4px;}
 h2:first-child{margin-top:0;}
 p{margin-bottom:10px;}
@@ -32,6 +35,7 @@ li{margin-bottom:6px;}
 .resumen{background:var(--navy-l);border-radius:12px;padding:18px 20px;}
 .resumen h2{margin-top:0;}
 .resumen ul{margin-bottom:0;}
+.borrador{background:var(--gold-l);border:1px dashed var(--gold);border-radius:10px;padding:12px 14px;font-size:13.5px;margin-bottom:16px;}
 .dato{font-weight:600;color:var(--navy-d);}
 .pendiente{background:var(--gold-l);border-bottom:1px dashed var(--gold);padding:0 3px;border-radius:3px;font-weight:600;}
 table{width:100%;border-collapse:collapse;margin:8px 0 14px;font-size:14px;}
@@ -52,14 +56,17 @@ a{color:#1B4F8A;}
 <div class="wrap">
   <div class="card">
     <h1>Aviso de Privacidad — <span class="js-inst">la institución</span></h1>
-    <div class="meta">Versión <span id="version">1.0</span> · Vigente desde <span id="vigencia">28 de septiembre de 2026</span> · Conforme a la Ley 81 de 2019 y el Decreto Ejecutivo 285 de 2021 de la República de Panamá</div>
+    <div class="meta">Versión <span id="version">2.0-borrador</span> · Fecha de esta versión: <span id="fechaVersion">26 de noviembre de 2026</span> · Conforme a la Ley 81 de 2019 y el Decreto Ejecutivo 285 de 2021 de la República de Panamá</div>
+
+    <div class="borrador"><strong>Borrador en revisión.</strong> Esta versión (2.0-borrador) está pendiente de revisión por un abogado panameño y no constituye asesoría legal. Lo marcado como <span class="pendiente">[VERIFICAR CON ABOGADO]</span> o <span class="pendiente">[PENDIENTE]</span> aún debe confirmarse antes de su publicación definitiva.</div>
 
     <div class="resumen">
       <h2>Lo esencial</h2>
       <ul>
         <li><strong>Quién es responsable de tus datos:</strong> <span class="js-inst dato">la institución</span>. Contacto: <span class="js-correo">—</span>.</li>
         <li><strong>Para qué los usamos:</strong> únicamente para administrar los equipos de la institución y atender las solicitudes de soporte técnico.</li>
-        <li><strong>Qué no hacemos:</strong> no vendemos tus datos, no los usamos para publicidad y no los usamos para entrenar inteligencia artificial.</li>
+        <li><strong>Qué no hacemos:</strong> no vendemos tus datos, no los usamos para publicidad y no los usamos para entrenar inteligencia artificial. SAGAE no tiene analítica ni rastreadores propios.</li>
+        <li><strong>Terceros técnicos:</strong> Cloudflare (que ve tu IP al abrir las páginas) y, en el portal público, Google reCAPTCHA (anti-spam). Ver las secciones 6 y 10.</li>
         <li><strong>Puedes reportar de forma anónima</strong> en el portal público, sin dar tu nombre ni tu correo.</li>
         <li><strong>Tus derechos:</strong> puedes pedir acceso, rectificación, cancelación, oposición y portabilidad de tus datos. Respondemos en un máximo de <strong>10 días hábiles</strong>.</li>
       </ul>
@@ -71,14 +78,15 @@ a{color:#1B4F8A;}
     <p><span class="js-inst dato">la institución</span><span class="js-dir-wrap"> — <span class="js-dir"></span></span> es la <strong>responsable</strong> de los datos personales que se recogen a través del sistema SAGAE (Sistema de Activos y Gestión Administrativa Educativa).</p>
     <p>Contacto para temas de privacidad: <span class="js-correo dato">—</span><span class="js-tel-wrap"> · Teléfono: <span class="js-tel dato"></span></span>.</p>
     <p class="js-oficial-wrap">Oficial de protección de datos personales: <span class="js-oficial dato"></span>.</p>
-    <p><strong>RYE Design</strong>, desarrollador de SAGAE, actúa como <strong>custodio de la base de datos</strong> (proveedor técnico): da soporte al sistema siguiendo las instrucciones de la institución, bajo un contrato de confidencialidad, y no decide para qué se usan los datos.</p>
+    <p><strong>RYE Design</strong>, desarrollador de SAGAE, actúa como <strong>encargado del tratamiento</strong> (proveedor técnico): da soporte al sistema siguiendo las instrucciones de la institución, bajo un contrato de confidencialidad, y no decide para qué se usan los datos.</p>
 
     <h2>2. Qué datos recogemos</h2>
     <div class="tabla"><table>
       <tr><th>Persona</th><th>Datos</th></tr>
-      <tr><td>Quien reporta un problema en el portal público</td><td>Nombre y correo (<em>no se piden si eliges reporte anónimo</em>), departamento, ubicación, descripción del problema y las fotos que decidas adjuntar.</td></tr>
+      <tr><td>Quien reporta un problema en el portal público</td><td>Nombre y correo (<em>no se piden si eliges reporte anónimo</em>), departamento, ubicación, descripción del problema y las fotos que decidas adjuntar. Además, el portal envía un identificador aleatorio de tu dispositivo (ver sección 10) y registra la fecha y la versión del aviso que aceptaste.</td></tr>
       <tr><td>Personal y colaboradores registrados</td><td>Nombre, correo, teléfono, cargo, departamento y equipos o espacios asignados.</td></tr>
       <tr><td>Usuarios del sistema (personal técnico y administrativo)</td><td>Usuario, contraseña (nunca se guarda en texto legible, solo cifrada), rol, datos de contacto, fecha del último acceso y registro de las acciones que realizan en el sistema.</td></tr>
+      <tr><td>Cualquier persona que abre las páginas de SAGAE</td><td>Datos técnicos de la conexión (dirección IP, tipo de navegador, fecha y hora, página solicitada) que reciben de forma automática Cloudflare, GitHub y Google (ver secciones 6 y 10). SAGAE no los usa para identificarte.</td></tr>
     </table></div>
     <p>SAGAE <strong>no solicita datos sensibles</strong> (salud, religión, origen, datos biométricos, etc.). Te pedimos no escribirlos en las descripciones y <strong>no adjuntar fotos en las que aparezcan personas</strong>, especialmente estudiantes, ni documentos con datos personales.</p>
     <p>SAGAE <strong>no toma decisiones automatizadas</strong> ni elabora perfiles sobre las personas.</p>
@@ -104,14 +112,17 @@ a{color:#1B4F8A;}
 
     <h2>6. Con quién se comparten los datos</h2>
     <ul>
-      <li><strong>Google LLC</strong>, proveedor de la infraestructura donde funciona SAGAE (Google Sheets, Drive, Apps Script y correo), en la cuenta de Google propia de la institución.</li>
-      <li><strong>RYE Design</strong>, custodio y proveedor de soporte técnico, solo cuando es necesario para dar mantenimiento o resolver un problema.</li>
+      <li><strong>Google LLC</strong>, proveedor de la infraestructura donde funciona SAGAE (Google Sheets, Drive, Apps Script y correo). Como regla general, esto ocurre en la <strong>cuenta de Google propia de la institución</strong>. <span class="pendiente">[VERIFICAR CON ABOGADO]</span> En instalaciones donde la cuenta de Google la administre otra persona o entidad (por ejemplo, el proveedor), esta frase debe ajustarse para decir quién es el titular de la cuenta.</li>
+      <li><strong>Cloudflare, Inc.</strong>: servicio de proxy y red de distribución de contenido (CDN) por el que pasan las páginas de SAGAE (dominio sagae.ryedesign.app). Ve el tráfico: tu dirección IP, el tipo de navegador, la fecha y hora y la página que pides, y lo usa para entregar las páginas más rápido y filtrar tráfico malicioso. No recibe el contenido de los reportes ni los datos del sistema, que viajan directo entre tu navegador y Google.</li>
+      <li><strong>GitHub, Inc.</strong>: aloja los archivos del programa (GitHub Pages) y, como todo servidor web, recibe la dirección IP y el navegador de quien abre las páginas.</li>
+      <li><strong>Google reCAPTCHA</strong> (Google LLC), <strong>solo en el portal público de reportes</strong>: verificación anti-spam (ver sección 10).</li>
+      <li><strong>RYE Design</strong>, encargado y proveedor de soporte técnico, solo cuando es necesario para dar mantenimiento o resolver un problema.</li>
       <li>Autoridades competentes, únicamente cuando la ley o una orden judicial lo exijan.</li>
     </ul>
-    <p>No se comparten datos con anunciantes ni con ningún otro tercero.</p>
+    <p>No se comparten datos con anunciantes ni con ningún otro tercero. Cada proveedor trata los datos que recibe según sus propias políticas de privacidad.</p>
 
     <h2>7. Transferencia fuera de Panamá</h2>
-    <p>Los servidores de Google pueden estar ubicados <strong>fuera de Panamá</strong> (por ejemplo, en los Estados Unidos). Esta transferencia se realiza con <strong>garantías adecuadas</strong>: los términos contractuales de protección de datos de Google para sus servicios de nube, que incluyen cifrado y controles de acceso, y, en el portal público, con tu <strong>consentimiento</strong> (D.E. 285, arts. 51 y 53).</p>
+    <p>Los servidores de Google, Cloudflare y GitHub pueden estar ubicados <strong>fuera de Panamá</strong> (por ejemplo, en los Estados Unidos). Esta transferencia se realiza con <strong>garantías adecuadas</strong>: los términos contractuales de protección de datos de esos proveedores, que incluyen cifrado y controles de acceso, y, en el portal público, con tu <strong>consentimiento</strong> (D.E. 285, arts. 51 y 53). <span class="pendiente">[VERIFICAR CON ABOGADO]</span> si las garantías de Cloudflare, GitHub y reCAPTCHA bastan o se necesita otra base.</p>
 
     <h2>8. Cuánto tiempo guardamos los datos</h2>
     <div class="tabla"><table>
@@ -125,13 +136,28 @@ a{color:#1B4F8A;}
     <h2>9. Seguridad</h2>
     <p>SAGAE aplica medidas técnicas y organizativas para proteger los datos: contraseñas cifradas, verificación en dos pasos, bloqueo tras intentos fallidos, sesiones que vencen por inactividad, permisos por rol verificados en el servidor, fotos privadas que solo ven usuarios con sesión, borrado de los datos guardados en el celular al cerrar sesión, respaldo diario y un registro de auditoría que no se puede modificar desde el sistema. Ninguna medida es infalible. Si ocurre un incidente que afecte tus datos, la institución te lo notificará a ti y a la Autoridad Nacional de Transparencia y Acceso a la Información (ANTAI) dentro de las <strong>72 horas</strong> siguientes a conocerlo (D.E. 285, art. 37).</p>
 
-    <h2>10. Almacenamiento en tu navegador (cookies)</h2>
-    <p>SAGAE <strong>no usa cookies</strong> de publicidad ni de analítica, ni herramientas de rastreo. Solo guarda en tu navegador lo técnicamente necesario:</p>
-    <ul>
-      <li><strong>Portal público:</strong> un identificador aleatorio del dispositivo y un contador temporal, para evitar envíos masivos (spam). No contienen tu nombre ni tu correo.</li>
-      <li><strong>App del personal técnico:</strong> una copia temporal de los tickets y equipos para trabajar con mala conexión. Se borra al cerrar sesión, al vencer la sesión y, como máximo, a los 7 días.</li>
-    </ul>
-    <p>Para mostrarse correctamente, algunas pantallas cargan tipografías y librerías desde servicios públicos (Google Fonts, jsDelivr y cdnjs), que reciben la dirección IP de tu dispositivo según sus propias políticas.</p>
+    <h2>10. Almacenamiento en tu navegador y cookies</h2>
+    <p>SAGAE <strong>no pone cookies propias</strong>, no usa publicidad, analítica ni herramientas de rastreo, y <strong>no carga tipografías ni librerías desde servicios externos</strong> (todo se sirve desde el propio sitio). Lo único que guarda en tu navegador es lo siguiente:</p>
+    <div class="tabla"><table>
+      <tr><th>Qué se guarda</th><th>Dónde</th><th>Para qué</th><th>Cuánto dura</th></tr>
+      <tr><td><code>sagae_portal_device</code>: identificador aleatorio del dispositivo (no contiene tu nombre ni tu correo)</td><td>Portal público de reportes · <code>localStorage</code></td><td>Limitar los envíos desde un mismo dispositivo para evitar spam.</td><td>No vence solo: permanece hasta que borres los datos del sitio en tu navegador.</td></tr>
+      <tr><td><code>sagae_rl</code>: contador de reportes enviados y hora de reinicio (máximo 3 cada 5 minutos)</td><td>Portal público de reportes · <code>sessionStorage</code></td><td>Limitar la cantidad de reportes por sesión.</td><td>Hasta que cierres la pestaña (y la ventana de 5 minutos se reinicia sola).</td></tr>
+      <tr><td><code>sagae_mobile_cache</code>: copia de los tickets y equipos (incluye nombres y correos que contengan), marcada con el usuario dueño</td><td>App móvil del personal técnico · <code>localStorage</code></td><td>Poder trabajar con mala conexión.</td><td>Se borra al cerrar sesión o al vencer la sesión (30 minutos sin actividad) y, como máximo, a los 7 días. Si entra otro usuario en el mismo teléfono, se descarta.</td></tr>
+      <tr><td>Archivos del programa (páginas, íconos, logos, librerías, <code>config.js</code> y este aviso) en las cachés <code>sagae-static-v4.0</code> y <code>sagae-mobile-v4.0</code></td><td>App móvil instalada · caché del <em>service worker</em></td><td>Que la app abra más rápido y funcione sin señal. No contienen datos personales; los datos del sistema nunca se guardan aquí.</td><td>Hasta que se publique una versión nueva del programa (que reemplaza la anterior) o desinstales la app / borres los datos del sitio.</td></tr>
+    </table></div>
+    <p>La <strong>sesión</strong> del personal (usuario y clave de sesión) <strong>no se guarda en el navegador</strong>: vive solo en la memoria de la pestaña y desaparece al cerrarla o recargar. El portal de escritorio del personal no guarda nada en <code>localStorage</code> ni <code>sessionStorage</code>.</p>
+
+    <p><strong>Identificador del dispositivo del portal.</strong> El portal público envía <code>sagae_portal_device</code> al servidor <strong>únicamente para limitar envíos</strong> (anti-spam). <strong>No debe usarse para identificar ni relacionar reportes anónimos</strong>, y la institución se compromete a no usarlo con ese fin. <span class="pendiente">[PENDIENTE: el programa aún lo envía también en los reportes anónimos — corrección técnica en curso; hasta entonces, este párrafo no puede publicarse como definitivo.]</span> Puedes borrarlo en cualquier momento limpiando los datos del sitio en tu navegador; se generará uno nuevo la próxima vez que envíes un reporte.</p>
+
+    <h3>Terceros que reciben datos al usar las páginas</h3>
+    <div class="tabla"><table>
+      <tr><th>Tercero</th><th>Dónde</th><th>Qué procesa</th></tr>
+      <tr><td><strong>Cloudflare, Inc.</strong> (proxy y CDN)</td><td>Todas las páginas (sagae.ryedesign.app)</td><td>Dirección IP, tipo de navegador, fecha y hora, página solicitada, país aproximado, e indicadores de seguridad para bloquear tráfico malicioso. Puede usar cookies técnicas de seguridad propias. <span class="pendiente">[VERIFICAR CON ABOGADO]</span> si basta informarlo o se requiere consentimiento.</td></tr>
+      <tr><td><strong>GitHub, Inc.</strong> (alojamiento de los archivos)</td><td>Todas las páginas</td><td>Dirección IP y navegador de quien pide los archivos.</td></tr>
+      <tr><td><strong>Google reCAPTCHA</strong> v3 (Google LLC)</td><td>Solo el portal público de reportes</td><td>Al abrir el portal, tu navegador contacta a Google (www.google.com y www.gstatic.com) y le envía tu dirección IP y datos del dispositivo y del navegador, además de señales de uso de la página, para decidir si eres una persona. Google puede poner cookies propias. Si tu navegador o control parental lo bloquea, el portal sigue funcionando. <span class="pendiente">[VERIFICAR CON ABOGADO]</span> si basta informarlo o se requiere consentimiento previo.</td></tr>
+      <tr><td><strong>Google LLC</strong> (Apps Script)</td><td>Todas las páginas, al guardar o consultar datos</td><td>Los datos del sistema (script.google.com y script.googleusercontent.com), más su IP y navegador.</td></tr>
+    </table></div>
+    <p>Las cookies y datos que usan estos terceros se rigen por las políticas de cada uno. Puedes borrar o bloquear las cookies desde la configuración de tu navegador.</p>
 
     <h2>11. Tus derechos</h2>
     <p>Puedes ejercer, de forma <strong>gratuita</strong>, los derechos de:</p>
@@ -146,7 +172,7 @@ a{color:#1B4F8A;}
     <p>Si no quedas conforme con la respuesta, puedes presentar una queja ante la <strong>Dirección de Protección de Datos Personales de la ANTAI</strong> (<a href="https://www.antai.gob.pa" target="_blank" rel="noopener">antai.gob.pa</a>).</p>
 
     <h2>12. Cambios a este aviso</h2>
-    <p>Si cambiamos este aviso, publicaremos la nueva versión en esta misma página con su fecha. Si el cambio afecta la forma en que usamos tus datos, lo informaremos antes de aplicarlo.</p>
+    <p>Si cambiamos este aviso, publicaremos la nueva versión en esta misma página con su número y su fecha. Si el cambio afecta la forma en que usamos tus datos, lo informaremos antes de aplicarlo.</p>
   </div>
   <p class="pie">SAGAE — Sistema de Activos y Gestión Administrativa Educativa · Desarrollado por RYE Design · © 2026 RYE Design. Todos los derechos reservados. Software de uso licenciado.</p>
 </div>
