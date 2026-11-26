@@ -147,7 +147,7 @@ a{color:#1B4F8A;}
     </table></div>
     <p>La <strong>sesión</strong> del personal (usuario y clave de sesión) <strong>no se guarda en el navegador</strong>: vive solo en la memoria de la pestaña y desaparece al cerrarla o recargar. El portal de escritorio del personal no guarda nada en <code>localStorage</code> ni <code>sessionStorage</code>.</p>
 
-    <p><strong>Identificador del dispositivo del portal.</strong> El portal público envía <code>sagae_portal_device</code> al servidor <strong>únicamente para limitar envíos</strong> (anti-spam). <strong>No debe usarse para identificar ni relacionar reportes anónimos</strong>, y la institución se compromete a no usarlo con ese fin. <span class="pendiente">[PENDIENTE: el programa aún lo envía también en los reportes anónimos — corrección técnica en curso; hasta entonces, este párrafo no puede publicarse como definitivo.]</span> Puedes borrarlo en cualquier momento limpiando los datos del sitio en tu navegador; se generará uno nuevo la próxima vez que envíes un reporte.</p>
+    <p><strong>Identificador del dispositivo del portal.</strong> El portal público envía <code>sagae_portal_device</code> al servidor <strong>únicamente para limitar envíos</strong> (anti-spam): el servidor lo usa en un contador temporal que se borra solo a la hora y <strong>no lo guarda junto al reporte</strong>, por lo que no permite relacionar un reporte anónimo con otros reportes.</p>
 
     <h3>Terceros que reciben datos al usar las páginas</h3>
     <div class="tabla"><table>

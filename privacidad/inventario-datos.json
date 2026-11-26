@@ -1,87 +1,97 @@
 {
- "avisoVersion": "2.0-borrador",
- "terminosVersion": "1.0-borrador",
- "proveedores": [
-  {
-   "host": "script.google.com",
-   "nombre": "Google LLC (Apps Script)",
-   "proposito": "Servidor del programa: guarda y consulta los datos en Google Sheets y Drive, y envía correos (todas las páginas)",
-   "mencionEnAviso": "Google LLC"
-  },
-  {
-   "host": "script.googleusercontent.com",
-   "nombre": "Google LLC (Apps Script)",
-   "proposito": "Dominio al que Apps Script redirige las respuestas de la API",
-   "mencionEnAviso": "script.googleusercontent.com"
-  },
-  {
-   "host": "www.google.com",
-   "nombre": "Google LLC (reCAPTCHA v3)",
-   "proposito": "Script y verificación anti-bot del portal público de reportes",
-   "mencionEnAviso": "Google reCAPTCHA"
-  },
-  {
-   "host": "www.gstatic.com",
-   "nombre": "Google LLC (reCAPTCHA v3)",
-   "proposito": "Archivos del script de reCAPTCHA (portal público)",
-   "mencionEnAviso": "Google reCAPTCHA"
-  },
-  {
-   "host": "recaptcha.google.com",
-   "nombre": "Google LLC (reCAPTCHA v3)",
-   "proposito": "Marco (frame) de reCAPTCHA permitido por la CSP del portal público",
-   "mencionEnAviso": "Google reCAPTCHA"
-  },
-  {
-   "host": "drive.google.com",
-   "nombre": "Google LLC (Drive)",
-   "proposito": "Enlaces a fotos guardadas en Drive que el personal pega y abre en otra pestaña; no se carga contenido de este host en la página",
-   "mencionEnAviso": "Google LLC"
-  },
-  {
-   "host": "sagae.ryedesign.app",
-   "nombre": "Cloudflare, Inc.",
-   "proposito": "Proxy y CDN delante de las páginas del programa (dominio de SAGAE); ve IP, navegador y página solicitada",
-   "mencionEnAviso": "Cloudflare, Inc."
-  },
-  {
-   "host": "github.io",
-   "nombre": "GitHub, Inc. (GitHub Pages)",
-   "proposito": "Aloja los archivos estáticos del programa; recibe IP y navegador de quien los pide",
-   "mencionEnAviso": "GitHub, Inc."
+  "avisoVersion": "2.0-borrador",
+  "terminosVersion": "1.0-borrador",
+  "proveedores": [
+    {
+      "host": "script.google.com",
+      "nombre": "Google LLC (Apps Script)",
+      "proposito": "Servidor del programa: guarda y consulta los datos en Google Sheets y Drive, y envía correos (todas las páginas)",
+      "mencionEnAviso": "Google LLC"
+    },
+    {
+      "host": "script.googleusercontent.com",
+      "nombre": "Google LLC (Apps Script)",
+      "proposito": "Dominio al que Apps Script redirige las respuestas de la API",
+      "mencionEnAviso": "script.googleusercontent.com"
+    },
+    {
+      "host": "www.google.com",
+      "nombre": "Google LLC (reCAPTCHA v3)",
+      "proposito": "Script y verificación anti-bot del portal público de reportes",
+      "mencionEnAviso": "Google reCAPTCHA"
+    },
+    {
+      "host": "www.gstatic.com",
+      "nombre": "Google LLC (reCAPTCHA v3)",
+      "proposito": "Archivos del script de reCAPTCHA (portal público)",
+      "mencionEnAviso": "Google reCAPTCHA"
+    },
+    {
+      "host": "recaptcha.google.com",
+      "nombre": "Google LLC (reCAPTCHA v3)",
+      "proposito": "Marco (frame) de reCAPTCHA permitido por la CSP del portal público",
+      "mencionEnAviso": "Google reCAPTCHA"
+    },
+    {
+      "host": "drive.google.com",
+      "nombre": "Google LLC (Drive)",
+      "proposito": "Enlaces a fotos guardadas en Drive que el personal pega y abre en otra pestaña; no se carga contenido de este host en la página",
+      "mencionEnAviso": "Google LLC",
+      "infraestructura": true
+    },
+    {
+      "host": "sagae.ryedesign.app",
+      "nombre": "Cloudflare, Inc.",
+      "proposito": "Proxy y CDN delante de las páginas del programa (dominio de SAGAE); ve IP, navegador y página solicitada",
+      "mencionEnAviso": "Cloudflare, Inc.",
+      "infraestructura": true
+    },
+    {
+      "host": "github.io",
+      "nombre": "GitHub, Inc. (GitHub Pages)",
+      "proposito": "Aloja los archivos estáticos del programa; recibe IP y navegador de quien los pide",
+      "mencionEnAviso": "GitHub, Inc.",
+      "infraestructura": true
+    }
+  ],
+  "almacenamientoLocal": [
+    {
+      "clave": "sagae_portal_device",
+      "tipo": "localStorage",
+      "archivos": [
+        "SAGAE_portal_reportes.html"
+      ],
+      "proposito": "Identificador aleatorio del dispositivo para limitar envíos (anti-spam)",
+      "plazo": "Sin vencimiento propio; hasta que el usuario borre los datos del sitio",
+      "mencionEnAviso": "sagae_portal_device"
+    },
+    {
+      "clave": "sagae_rl",
+      "tipo": "sessionStorage",
+      "archivos": [
+        "SAGAE_portal_reportes.html"
+      ],
+      "proposito": "Contador de reportes enviados para limitar a 3 cada 5 minutos",
+      "plazo": "Hasta cerrar la pestaña; la ventana se reinicia a los 5 minutos",
+      "mencionEnAviso": "sagae_rl"
+    },
+    {
+      "clave": "sagae_mobile_cache",
+      "tipo": "localStorage",
+      "archivos": [
+        "SAGAE_index_mobile.html"
+      ],
+      "proposito": "Copia de tickets y equipos para trabajar con mala conexión",
+      "plazo": "Se borra al cerrar sesión o vencer la sesión; máximo 7 días",
+      "mencionEnAviso": "sagae_mobile_cache"
+    }
+  ],
+  "huellas": {
+    "aviso-privacidad.html": {
+      "2.0-borrador": "0a883696a848f3d154c07eedb49abccd9cf5fa28bc6921c4a188adff2fd21018"
+    },
+    "terminos-de-uso.html": {
+      "1.0-borrador": "5412399f7ea8866ea34597df5b6d5ee98897f5c9dc1c3e165050f6d7a56b8bb3"
+    }
   }
- ],
- "almacenamientoLocal": [
-  {
-   "clave": "sagae_portal_device",
-   "tipo": "localStorage",
-   "archivos": [
-    "SAGAE_portal_reportes.html"
-   ],
-   "proposito": "Identificador aleatorio del dispositivo para limitar envíos (anti-spam)",
-   "plazo": "Sin vencimiento propio; hasta que el usuario borre los datos del sitio",
-   "mencionEnAviso": "sagae_portal_device"
-  },
-  {
-   "clave": "sagae_rl",
-   "tipo": "sessionStorage",
-   "archivos": [
-    "SAGAE_portal_reportes.html"
-   ],
-   "proposito": "Contador de reportes enviados para limitar a 3 cada 5 minutos",
-   "plazo": "Hasta cerrar la pestaña; la ventana se reinicia a los 5 minutos",
-   "mencionEnAviso": "sagae_rl"
-  },
-  {
-   "clave": "sagae_mobile_cache",
-   "tipo": "localStorage",
-   "archivos": [
-    "SAGAE_index_mobile.html"
-   ],
-   "proposito": "Copia de tickets y equipos para trabajar con mala conexión",
-   "plazo": "Se borra al cerrar sesión o vencer la sesión; máximo 7 días",
-   "mencionEnAviso": "sagae_mobile_cache"
-  }
- ],
- "huellas": {}
 }

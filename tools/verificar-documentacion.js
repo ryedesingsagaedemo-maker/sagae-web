@@ -137,7 +137,7 @@ function verificar(raiz, opciones) {
     if (!conocidos.has(h)) errores.push('Host externo NO inventariado: "' + h + '" (usado en ' + [...usados[h]].join(', ') + '). Agregalo a "proveedores" en privacidad/inventario-datos.json y mencionalo en aviso-privacidad.html (subiendo la version del aviso).');
   }
   for (const p of inv.proveedores) {
-    if (p.host && !usados[p.host.toLowerCase()]) avisos.push('El proveedor "' + p.host + '" esta en el inventario pero el codigo ya no lo usa. Si ya no se usa, quitalo del inventario y del aviso.');
+    if (p.host && !p.infraestructura && !usados[p.host.toLowerCase()]) avisos.push('El proveedor "' + p.host + '" esta en el inventario pero el codigo ya no lo usa. Si ya no se usa, quitalo del inventario y del aviso.');
   }
 
   // 2. Menciones literales en el aviso

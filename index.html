@@ -2690,6 +2690,10 @@ async function apiGet(sheet, intento=1, params=''){
       _forzarCambioPass(()=>{ loadFromSheets().then(()=>{ try{renderAll();}catch(e){} }); });
       return [];
     }
+    if(d && d.ok===false && d.error==='TERMINOS_PENDIENTES'){
+      _mostrarTerminos(null,()=>{ loadFromSheets().then(()=>{ try{renderAll();}catch(e){} }); });
+      return [];
+    }
     return Array.isArray(d) ? d : [];
   }
   catch(e){
@@ -2790,6 +2794,7 @@ async function apiPostAsync(sheet, action, payload, timeoutMs=60000){
       if(r.ok){
         const d = await r.json();
         if(d && d.error==='CAMBIO_PASSWORD_OBLIGATORIO' && action!=='cambiar_mi_password') _forzarCambioPass();
+        if(d && d.error==='TERMINOS_PENDIENTES' && action!=='aceptar_terminos') _mostrarTerminos();
         if(d && !d.pending) return d;
       }
     }catch(e){ /* seguir intentando hasta agotar el tiempo */ }
@@ -3370,6 +3375,13 @@ async function _completarLoginExitoso_(resp, err){
     return;
   }
 
+  // Términos de Uso sin aceptar (después de la contraseña): tampoco se carga nada hasta aceptar.
+  if(resp.terminosPendiente===true){
+    document.getElementById('login-screen').style.display='none';
+    _mostrarTerminos(resp.terminosVersion,()=>{ _completarLoginExitoso_({...resp, terminosPendiente:false}, err); });
+    return;
+  }
+
   document.getElementById('loading-overlay').style.display='flex';
   document.getElementById('login-screen').style.display='none';
   const cargado = await loadFromSheets();
@@ -3872,6 +3884,68 @@ function _forzarCambioPass(alExito){
 function _forzarSalir(){
   try{ if(session&&session.token) apiPostAsync(null,'cerrar_sesion',{_sessionToken:session.token}).catch(()=>{}); }catch(e){}
   setTimeout(()=>location.reload(),300);
+}
+// ── TÉRMINOS DE USO (v10.1) ─────────────────────────────────────────────────────────────────────
+// El servidor deja la sesión restringida (terminosPendiente) hasta que la persona acepte la versión vigente.
+// Ventana que no se puede cerrar: solo "Aceptar" (con la casilla marcada) o "Cerrar sesión".
+let _terminosVer=null, _terminosOk=null;
+async function _versionTerminos(){
+  if(_terminosVer) return _terminosVer;
+  try{
+    const r=await fetch(API+'?action=config&t='+Date.now(),{mode:'cors'});
+    const d=await r.json();
+    if(d && d.ok && d.terminosVersion) _terminosVer=String(d.terminosVersion);
+  }catch(e){}
+  return _terminosVer;
+}
+async function _mostrarTerminos(version, alExito){
+  if(alExito) _terminosOk=alExito;
+  if(version) _terminosVer=String(version);
+  if(document.getElementById('terminos-ov')) return;
+  const ver=await _versionTerminos();
+  if(document.getElementById('terminos-ov')) return;
+  const ov=document.createElement('div');
+  ov.id='terminos-ov';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.85);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;';
+  ov.innerHTML=`<div role="dialog" aria-modal="true" aria-labelledby="tm-titulo" style="background:#fff;border-radius:10px;padding:22px;max-width:420px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,.4);">
+    <div id="tm-titulo" style="font-size:16px;font-weight:700;margin-bottom:6px;">Términos de Uso</div>
+    <div style="font-size:12px;color:#475569;margin-bottom:12px;line-height:1.5;">Para usar SAGAE debes leer y aceptar los Términos de Uso y el Aviso de Privacidad. Se te pedirá de nuevo solo si cambian.</div>
+    <div style="font-size:13px;margin-bottom:12px;">
+      <a href="terminos-de-uso.html" target="_blank" rel="noopener">Términos de Uso</a> &nbsp;·&nbsp;
+      <a href="aviso-privacidad.html" target="_blank" rel="noopener">Aviso de Privacidad</a>
+    </div>
+    <label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;margin-bottom:12px;cursor:pointer;">
+      <input type="checkbox" id="tm-chk" onchange="document.getElementById('tm-btn').disabled=!this.checked" style="margin-top:3px;">
+      <span>He leído y acepto los Términos de Uso (versión <b id="tm-ver"></b>) y el Aviso de Privacidad</span>
+    </label>
+    <div id="tm-err" style="display:none;color:#b91c1c;font-size:12px;margin-bottom:8px;"></div>
+    <button class="btn btn-p" id="tm-btn" style="width:100%;" disabled onclick="_aceptarTerminosWeb()">Aceptar</button>
+    <button class="btn" style="width:100%;margin-top:8px;" onclick="_forzarSalir()">Cerrar sesión</button>
+  </div>`;
+  document.body.appendChild(ov);
+  document.getElementById('tm-ver').textContent=ver||'';
+  if(!ver){ const e=document.getElementById('tm-err'); e.textContent='No se pudo consultar la versión de los términos. Cierra la sesión e inténtalo de nuevo.'; e.style.display='block'; document.getElementById('tm-chk').disabled=true; }
+}
+async function _aceptarTerminosWeb(){
+  const err=document.getElementById('tm-err'),btn=document.getElementById('tm-btn');
+  if(!document.getElementById('tm-chk').checked||!_terminosVer) return;
+  err.style.display='none'; btn.disabled=true; btn.textContent='Guardando...';
+  let resp;
+  try{ resp=await apiPostAsync(null,'aceptar_terminos',{version:_terminosVer}); }
+  catch(e){ resp={ok:false,error:'NETWORK',message:'No se pudo conectar con el servidor. Intenta de nuevo.'}; }
+  btn.textContent='Aceptar'; btn.disabled=false;
+  if(!resp || resp.ok!==true){
+    if(resp && resp.error==='VERSION_TERMINOS_INVALIDA') _terminosVer=null; // la versión cambió: se consulta de nuevo
+    err.textContent=_msgErrTerminos(resp); err.style.display='block'; return;
+  }
+  document.getElementById('terminos-ov')?.remove();
+  const cb=_terminosOk; _terminosOk=null;
+  if(cb) cb();
+}
+function _msgErrTerminos(resp){
+  if(!resp) return 'Sin respuesta del servidor. Intenta de nuevo.';
+  if(resp.error==='SESSION_INVALID') return 'Tu sesión expiró. Cierra la sesión e inicia de nuevo.';
+  return _MSG_ERR_SERVIDOR[resp.error] || resp.message || resp.error || 'Sin respuesta del servidor. Intenta de nuevo.';
 }
 async function _guardarCambioForzado(){
   const err=document.getElementById('fp-err'),btn=document.getElementById('fp-btn');
@@ -7832,6 +7906,8 @@ const _MSG_ERR_SERVIDOR={
   DEMASIADAS_FOTOS:'Un ticket admite máximo 5 fotos.',
   RATE_LIMIT:'Demasiadas acciones seguidas. Espera un momento e intenta de nuevo.',
   CAMBIO_PASSWORD_OBLIGATORIO:'Debes cambiar tu contraseña temporal antes de continuar.',
+  TERMINOS_PENDIENTES:'Debes aceptar los Términos de Uso y el Aviso de Privacidad antes de continuar.',
+  VERSION_TERMINOS_INVALIDA:'La versión de los términos cambió. Cierra la sesión y vuelve a entrar para ver la vigente.',
   HISTORIAL_GUARDADO_DANADO:'El historial de este registro está dañado; avisa al administrador.',
   HISTORIAL_LLENO:'El historial de este registro llegó a su límite; avisa al administrador.'
 };
