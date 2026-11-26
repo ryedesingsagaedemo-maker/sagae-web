@@ -514,6 +514,13 @@ function _mensajeErrorPortal(data){
   if(c==='TIMEOUT') return 'el servidor tardó demasiado en responder';
   return (data && data.message) ? String(data.message).slice(0,200) : 'no se pudo completar la operación';
 }
+function _mensajeCrearTicket(data){
+  const c = data && data.error;
+  if(c==='PORTAL_SATURADO') return (data.message ? String(data.message).slice(0,200) : 'El portal recibió muchos reportes en esta hora. Intenta de nuevo en unos minutos.');
+  if(c==='RATE_LIMIT_GLOBAL') return 'El sistema está recibiendo muchos reportes en este momento. Intenta de nuevo en unos minutos.';
+  if(c==='RECAPTCHA_RECHAZADO') return 'No pudimos verificar el envío. Recarga la página e inténtalo de nuevo.';
+  return (data && data.message) ? String(data.message).slice(0,200) : 'No se pudo enviar el reporte. Intenta de nuevo en unos minutos.';
+}
 function _esCorreoUnico(c){ return /^[^\s@,;<>()]+@[^\s@,;<>()]+\.[^\s@,;<>()]+$/.test(c) && c.length<=120; }
 
 // ── PRIVACIDAD (Ley 81 de 2019) ─────────────────────────────────
@@ -537,7 +544,7 @@ function toggleAnonimoPortal(){
 async function enviarReporte(){
   hideError();
   const anonimo=document.getElementById("f-anonimo").checked;
-  const nombre=anonimo ? "Anónimo" : document.getElementById("f-nombre").value.trim();
+  const nombre=anonimo ? "Anónimo" : document.getElementById("f-nombre").value.replace(/[\r\n\t]+/g," ").replace(/\s{2,}/g," ").trim().slice(0,80);
   const correo=anonimo ? "" : document.getElementById("f-correo").value.trim();
   const depto=document.getElementById("f-depto").value.trim();
   const tipo=document.getElementById("f-tipo").value;
@@ -595,8 +602,7 @@ async function enviarReporte(){
       window._enviandoPortal = false;
       btn.disabled=false;spinner.style.display="none";btnText.textContent="Enviar reporte";
       window._lastSubmitClick = 0;
-      showError(data && data.error==="RATE_LIMIT_GLOBAL" ? "El sistema está recibiendo muchos reportes en este momento. Intenta de nuevo en unos minutos."
-        : (data && data.message ? data.message : "No se pudo enviar el reporte. Intenta de nuevo en unos minutos."));
+      showError(_mensajeCrearTicket(data));
       return;
     }
     const codigo = data.codigo;
@@ -609,7 +615,7 @@ async function enviarReporte(){
         try{
           const r = await apiPostAsync(null,"uploadFoto",{
             origen:"portal", uploadToken:data.uploadToken, codigoTicket:codigo,
-            base64:f.base64, mimeType:f.mimeType, nombreArchivo:f.nombreArchivo,
+            base64:f.base64, mimeType:f.mimeType, nombreArchivo:f.nombreArchivo, nota:f.nota||"",
             modulo:"Tickets", deviceId:ticket.deviceId
           },45000);
           if(!r || r.ok!==true) fotosFallidas.push(r||{});
