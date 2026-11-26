@@ -347,7 +347,7 @@ tbody tr.clickable{cursor:pointer;}
 tr.gd-pend,.k-card.gd-pend{pointer-events:none;}
 tr.gd-pend td:last-child,.k-card.gd-pend button{opacity:.35;}
 tr.gd-pend .gd-marca,.k-card.gd-pend .gd-marca{pointer-events:auto;}
-#sync-bar{position:fixed;top:0;left:50%;transform:translateX(-50%);z-index:950;display:none;background:#1B3A6B;color:#fff;
+#pend-bar{position:fixed;top:0;left:50%;transform:translateX(-50%);z-index:950;display:none;background:#1B3A6B;color:#fff;
   font-size:11px;font-weight:600;padding:3px 14px;border-radius:0 0 8px 8px;box-shadow:0 2px 8px rgba(0,0,0,.2);pointer-events:none;}
 .sk-bar{height:12px;border-radius:6px;background:linear-gradient(90deg,var(--bg3,#e8eaee) 25%,#f3f4f6 50%,var(--bg3,#e8eaee) 75%);
   background-size:200% 100%;animation:sk-brillo 1.2s ease-in-out infinite;}
@@ -3139,6 +3139,7 @@ async function loadFromSheets(){
   activos  = rawA.map(r=>({...r,id:r.codigo,valor:parseFloat(r.valor)||0,vida:parseInt(r.vida)||3,historial:parseHist(r.historial)}));
   cntActivos = activos.length;
   tickets  = rawT.map(r=>({...r,id:r.codigo,avance:parseInt(r.avance)||0,historial:parseHist(r.historial)}));
+  _reinyectarPendientes('activos'); _reinyectarPendientes('tickets'); // una fila «Guardando…»/«No se guardó» no desaparece con una recarga
   cntTickets = tickets.length;
   _cargaInicial = false;
 
@@ -3198,6 +3199,7 @@ async function _cargarDatosSecundarios(){
     mobiliario = Array.isArray(rawMob0) ? rawMob0.map(r=>({
       ...r, cantidad:parseInt(r.cantidad)||1, valor:parseFloat(r.valor)||0, historial:parseHist(r.historial)
     })) : [];
+    _reinyectarPendientes('mobiliario');
     licencias = Array.isArray(rawLic0) ? rawLic0.map(r=>({
       ...r, costoAnual:parseFloat(r.costoAnual)||0, cantidadTotal:parseInt(r.cantidadTotal)||0,
       instalaciones: parseHist(r.instalaciones), historial: parseHist(r.historial)
@@ -4282,11 +4284,12 @@ async function saveActivo(){
     responsableEspacioEmail:document.getElementById('ea-responsable-espacio-email')?.value||'',
     responsableEspacioEmail:document.getElementById('ea-responsable-espacio-email')?.value||'',depto:document.getElementById('ea-depto').value.trim()||'—',compra:document.getElementById('ea-compra').value||'—',garantia:document.getElementById('ea-garantia').value||'—',valor:parseFloat(document.getElementById('ea-valor').value)||0,vida:parseInt(document.getElementById('ea-vida').value)||3,obs:document.getElementById('ea-obs').value.trim(),foto:document.getElementById('ea-foto')?.value.trim()||'—',historial:[{tipo:'Creación',desc:'Registrado por '+session.nombre,fecha:ts(),usuario:session.nombre,color:'green'}],fechaCreacion:ts()};
     activos.push(a); cntActivos = activos.length;
-    const _recargarActivos = async()=>{
+    const _recargarActivos = async(conservarPend=true)=>{
       try{
         const raw = await apiGet('activos');
         if(Array.isArray(raw) && !raw._failed){
           activos = raw.map(r=>({...r,id:r.codigo,valor:parseFloat(r.valor)||0,vida:parseInt(r.vida)||3,historial:parseHist(r.historial)}));
+          if(conservarPend) _reinyectarPendientes('activos');
           cntActivos = activos.length;
           return true;
         }
@@ -4299,7 +4302,7 @@ async function saveActivo(){
       alTimeout: async()=>{
         // Sin confirmación NO se reintenta a ciegas: se recarga para ver si entró.
         activos = activos.filter(x=>x!==a);
-        await _recargarActivos();
+        await _recargarActivos(false); // sin reinyectar: el borrador provisional no debe contarse como hallado
         const h = activos.find(x=>x.nombre===nombre && x.fechaCreacion===a.fechaCreacion);
         if(h) activos = activos.filter(x=>x!==h);
         _reinyectarPendientes('activos');
@@ -4867,11 +4870,12 @@ function _pendCuenta(){ let n=0; _pend.forEach(e=>{ if(e.estado==='guardando') n
 
 // Barra fija discreta "Sincronizando…" mientras haya envíos pendientes (B9b)
 function _pendBarra(){
-  let b = document.getElementById('sync-bar');
+  // Elemento PROPIO (#pend-bar): #sync-bar es el indicador de conexión de la barra superior (setSyncStatus).
+  let b = document.getElementById('pend-bar');
   const n = _pendCuenta();
   if(!n){ if(b) b.style.display='none'; return; }
   if(!b){
-    b = document.createElement('div'); b.id='sync-bar'; b.setAttribute('role','status');
+    b = document.createElement('div'); b.id='pend-bar'; b.className='pend-bar'; b.setAttribute('role','status');
     document.body.appendChild(b);
   }
   b.textContent = '⏳ Sincronizando… ('+n+' pendiente'+(n!==1?'s':'')+')';
@@ -4975,9 +4979,10 @@ async function _enviarPend(e){
 function reintentarGuardado(key){
   const e = _pend.get(key);
   if(!e || e.estado!=='error' || e.enviando) return;
-  // Tras un rechazo claro del servidor se usa un _opId nuevo; tras un tiempo agotado
-  // se conserva el mismo para que el servidor reconozca el envío ya hecho.
-  if(e.ultimoError!=='TIMEOUT') e.opId = _generarOpId();
+  // SIEMPRE el mismo _opId. Decisión (revisado en Code.gs, recordarOperacion_ / OP_TTL_SEGUNDOS=600):
+  // el servidor recuerda SOLO las operaciones EXITOSAS, nunca los errores. Así, si el primer envío sí
+  // se guardó (tiempo agotado al confirmar), el reintento recibe el resultado anterior sin escribir
+  // otra fila; y si fue rechazado, el mismo _opId no tiene nada recordado y se procesa normal.
   _enviarPend(e);
 }
 
@@ -8793,6 +8798,7 @@ async function ejecutarImportarMob(){
   try{
     const raw = await apiGet('mobiliario');
     mobiliario = raw.map(r=>({...r,cantidad:parseInt(r.cantidad)||1,valor:parseFloat(r.valor)||0,historial:parseHist(r.historial)}));
+    _reinyectarPendientes('mobiliario');
   }catch(e){ /* la lista se refresca al recargar */ }
 
   btn.textContent = 'Importar mobiliario';
@@ -9816,11 +9822,12 @@ function _mobUnidades(lista, condicion){
 
 // Recarga la hoja de mobiliario desde el servidor. Si la lectura falla se
 // conserva lo que ya hay en pantalla: nunca se reemplaza por una lista vacía.
-async function _mobRecargar(){
+async function _mobRecargar(conservarPend=true){
   try{
     const raw = await apiGet('mobiliario');
     if(Array.isArray(raw) && !raw._failed){
       mobiliario = raw.map(r=>({...r,cantidad:parseInt(r.cantidad)||1,valor:parseFloat(r.valor)||0,historial:parseHist(r.historial)}));
+      if(conservarPend) _reinyectarPendientes('mobiliario');
       return true;
     }
   }catch(e){}
@@ -9964,10 +9971,11 @@ async function guardarMobiliario(){
     }
     temps.forEach(o=>mobiliario.push(o));
     const hechos = new Set(); // los ya confirmados no se vuelven a enviar al reintentar
+    const previos = [];       // códigos reales de los confirmados en un intento anterior que falló a medias
     guardarOptimista('mobiliario', temps[0], {
       registros:temps, accion:'insert', nombre:(nRegistros>1?'los '+nRegistros+' registros':'el elemento'), key:temps[0].codigo,
       vistas:['mobiliario','dashboard'],
-      enviar: async()=>{
+      enviar: async(e)=>{
         let falla = null;
         for(const o of temps){
           if(hechos.has(o)) continue;
@@ -9975,15 +9983,28 @@ async function guardarMobiliario(){
           if(!res || res.ok===false){ falla = res || {ok:false}; break; }
           hechos.add(o);
         }
-        if(falla) return {ok:false, error:falla.error, message:'Solo se confirmaron '+hechos.size+' de '+temps.length+' registros ('+((falla.message||falla.error)||'sin respuesta')+')'};
+        if(falla){
+          // Falla a medias: los confirmados quedan como registros normales (con su código real) y solo
+          // los NO confirmados siguen marcados «No se guardó · Reintentar».
+          const pend = temps.filter(o=>!hechos.has(o));
+          const confirmados = temps.filter(o=>hechos.has(o));
+          confirmados.forEach(o=>{ delete o._estadoGuardado; delete o._pendKey; });
+          e.registros = pend;
+          mobiliario = mobiliario.filter(m=>!confirmados.includes(m));
+          await _mobRecargar(); // trae los confirmados con su código real y reinyecta los pendientes
+          const reales = mobiliario.filter(m=>!antes.has(m.codigo) && !m._estadoGuardado).map(m=>m.codigo);
+          reales.forEach(c=>{ audit('CREAR','Mobiliario',c,'Registrado por '+session.nombre+': '+nombre+(modo==='lote'?' (lote de '+cantidad+')':'')); antes.add(c); previos.push(c); });
+          return {ok:false, error:falla.error, message:'Solo se confirmaron '+hechos.size+' de '+temps.length+' registros ('+((falla.message||falla.error)||'sin respuesta')+'); los demás siguen marcados para reintentar'};
+        }
         return {ok:true};
       },
       alConfirmar: async()=>{
         mobiliario = mobiliario.filter(m=>!temps.includes(m));
         await _mobRecargar();           // conocer los códigos REALES que asignó el servidor
         _reinyectarPendientes('mobiliario');
-        const nuevos = mobiliario.filter(m=>!antes.has(m.codigo) && !m._estadoGuardado).map(m=>m.codigo);
-        nuevos.forEach(c=>audit('CREAR','Mobiliario',c,'Registrado por '+session.nombre+': '+nombre+(modo==='lote'?' (lote de '+cantidad+')':'')));
+        const nuevos0 = mobiliario.filter(m=>!antes.has(m.codigo) && !m._estadoGuardado).map(m=>m.codigo);
+        nuevos0.forEach(c=>audit('CREAR','Mobiliario',c,'Registrado por '+session.nombre+': '+nombre+(modo==='lote'?' (lote de '+cantidad+')':'')));
+        const nuevos = previos.concat(nuevos0);
         renderSolo(['mobiliario','dashboard']);
         showToast(nRegistros>1 ? '✅ '+nRegistros+' registros creados: '+nuevos[0]+' a '+nuevos[nuevos.length-1] : '✅ Elemento registrado'+(nuevos[0]?' ('+nuevos[0]+')':''),'success');
         if(nuevos.length>1 && modo==='individual' && confirm('¿Imprimir ahora las '+nuevos.length+' etiquetas de los registros creados?')){

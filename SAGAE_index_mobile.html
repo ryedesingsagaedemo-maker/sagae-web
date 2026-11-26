@@ -1323,6 +1323,15 @@ async function _completarActivoMob(a){
     return true;
   }catch(e){ return false; }
 }
+/* Un registro con guardado fallido o aún provisional no se puede editar: el borrador
+   de edición pisaría al de alta y el registro se perdería. Primero se reintenta o descarta. */
+function _bloqueadoPorPendienteMob(o){
+  if(o && (o._errGuardado || o._temporal)){
+    showToast('Primero reintenta o descarta el guardado pendiente (botones en la tarjeta).','error',4500);
+    return true;
+  }
+  return false;
+}
 /* Datos que viajan al servidor: sin banderas internas de pantalla. */
 function _payloadMob(o, extra){
   const p = {...o, ...(extra||{})};
@@ -1590,7 +1599,7 @@ async function loadData(){
         const tOk = rawT && !_listaVaciaSospechosa(rawT, tickets);
         const aOk = rawA && !_listaVaciaSospechosa(rawA, activos);
         if(tOk)tickets=_conservarPendientesMob(_mapTicketsMob(rawT,tickets),tickets);
-        if(aOk)activos=rawA.map(r=>({...r,id:r.codigo,valor:parseFloat(r.valor)||0,vida:parseInt(r.vida)||3,historial:parseHist(r.historial)}));
+        if(aOk)activos=_conservarPendientesMob(_mapActivosMob(rawA),activos);
         if(rawDep)departamentos=rawDep.map(r=>({...r}));
         if(rawEsp)espacios=rawEsp.map(r=>({...r}));
         if(rawPer)personas=rawPer.map(r=>({...r}));
@@ -1627,7 +1636,7 @@ async function cargarDatosPostLogin(){
     const tFalla = rawT===null || _listaVaciaSospechosa(rawT, tickets);
     const aFalla = rawA===null || _listaVaciaSospechosa(rawA, activos);
     if(!tFalla){tickets=_conservarPendientesMob(_mapTicketsMob(rawT,tickets),tickets);cntTickets=tickets.length;}
-    if(!aFalla){activos=rawA.map(r=>({...r,id:r.codigo,valor:parseFloat(r.valor)||0,vida:parseInt(r.vida)||3,historial:parseHist(r.historial)}));}
+    if(!aFalla){activos=_conservarPendientesMob(_mapActivosMob(rawA),activos);}
     saveCache();
     const fallaron=[];
     if(tFalla) fallaron.push("tickets");
@@ -2117,9 +2126,7 @@ async function tomarTicket(codigo, e){
     usuario: session.nombre,
     color:   'blue'
   });
-  t._isTakeTicket = true;
-  t._respEsperado = respAnterior;
-  const resultado = await apiPostConRespuesta('tickets','update',t);
+  const resultado = await apiPostConRespuesta('tickets','update',_payloadMob(t,{_isTakeTicket:true,_respEsperado:respAnterior}));
   /* v2.4: estas banderas eran de un solo uso pero quedaban pegadas al objeto
      en memoria y en la caché local; cualquier edición posterior del mismo
      ticket (estado, avance, piezas) viajaba marcada como "tomar ticket" y
@@ -2440,6 +2447,7 @@ function agregarFotoTicketMobile(){
 }
 function quickEstado(codigo){
   const t=tickets.find(x=>x.codigo===codigo);if(!t)return;
+  if(_bloqueadoPorPendienteMob(t)){ closeSheet(); return; }
   _completarHistorialTicketMob(t);
   closeSheet();
   const overlay=document.getElementById("modal-overlay");
@@ -2468,6 +2476,7 @@ function quickEstado(codigo){
 }
 function quickAvance(codigo){
   const t=tickets.find(x=>x.codigo===codigo);if(!t)return;
+  if(_bloqueadoPorPendienteMob(t)){ closeSheet(); return; }
   _completarHistorialTicketMob(t);
   closeSheet();
   document.getElementById("modal-title").textContent="Actualizar avance";
@@ -2535,6 +2544,7 @@ function openNuevoTicket(){
 }
 function openEditTicket(codigo){
   const t=tickets.find(x=>x.codigo===codigo);if(!t)return;
+  if(_bloqueadoPorPendienteMob(t)){ closeSheet(); return; }
   _completarHistorialTicketMob(t);
   document.getElementById("modal-title").textContent="Editar ticket";
   document.getElementById("mt-id").value=codigo;
@@ -2733,6 +2743,7 @@ async function saveTicket(){
     const motivo=document.getElementById("mt-motivo").value.trim();
     const t=tickets.find(x=>x.codigo===editId);if(!t)return;
     if(t._guardando){ showToast('Este ticket aún se está guardando. Espera un momento.',''); return; }
+    if(_bloqueadoPorPendienteMob(t)) return;
     // La lista llega recortada (modo liviano): se completa el historial antes de
     // editar, para no mandar al servidor una copia parcial como si fuera completa.
     if(t._histLigero && !(await _completarHistorialTicketMob(t))){
@@ -3024,6 +3035,7 @@ function _mobEaLimpiarBloquesMant(){
 function openEditActivoSheet(codigo){
   const a = activos.find(x=>x.codigo===codigo);
   if(!a){ showToast('Activo no encontrado',''); return; }
+  if(_bloqueadoPorPendienteMob(a)){ closeSheet(); return; }
   const modal = document.getElementById('mob-modal-activo');
   if(!modal) return;
   modal._editCodigo = codigo;
@@ -3071,6 +3083,7 @@ function openEditActivoSheet(codigo){
   modal.classList.add('open');
 }
 function openMantActivo(){
+  if(activoDetalle && _bloqueadoPorPendienteMob(activoDetalle)){ closeSheet(); return; }
   document.getElementById("mm-tipo").value="Preventivo";
   document.getElementById("mm-desc").value="";
   document.getElementById("mm-fecha").value=new Date().toISOString().slice(0,10);
@@ -3103,6 +3116,7 @@ async function saveMant(){
   if(!activoDetalle) return;
   const a=activoDetalle;
   if(a._guardando){ showToast('Este activo aún se está guardando. Espera un momento.',''); return; }
+  if(_bloqueadoPorPendienteMob(a)) return;
   const desc=document.getElementById("mm-desc").value.trim();
   if(!desc){showToast("La descripción es obligatoria","error");return;}
   const emailResp=(document.getElementById("mm-email-resp")?.value||"").trim();
@@ -3156,7 +3170,7 @@ async function _enviarActivoMob(codigo){
         if(i) await new Promise(r=>setTimeout(r,5000));
         try{
           const raw=await apiGet('activos');
-          const h=(Array.isArray(raw)&&!raw._failed)?raw.find(x=>x&&x.codigo&&!w.codigosAntes.has(x.codigo)&&x.nombre===w.payload.nombre):null;
+          const h=(Array.isArray(raw)&&!raw._failed)?raw.find(x=>x&&x.codigo&&!w.codigosAntes.has(x.codigo)&&x.nombre===w.payload.nombre&&x.fechaCreacion===w.payload.fechaCreacion):null;
           if(h) res={ok:true,codigo:h.codigo};
         }catch(e){}
       }
@@ -3725,6 +3739,7 @@ async function guardarNuevoActivoMobile(){
     }
   }
   if(existente && existente._guardando){ showMobToast('Este activo aún se está guardando. Espera un momento.'); return; }
+  if(_bloqueadoPorPendienteMob(existente)) return;
   _spinnerBtnMob(btn, true, editCodigo ? 'Guardando cambios…' : 'Guardando…');
   try{
     if(existente && existente._histLigero && !(await _completarActivoMob(existente))){

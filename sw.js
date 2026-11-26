@@ -125,8 +125,7 @@ const STATIC_ASSETS = [
   './logo/sagae-simbolo.png',
   './logo/sagae-simbolo-blanco.png',
   './config.js',
-  './vendor/purify.min.js',
-  './vendor/html5-qrcode.min.js'
+  './vendor/purify.min.js'
 ];
 
 // Recursos OPCIONALES: se guardan uno por uno y, si alguno falta, no se pierde el resto
