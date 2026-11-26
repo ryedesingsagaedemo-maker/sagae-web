@@ -1,11 +1,12 @@
 // ════════════════════════════════════════════════════════════════════
-// SAGAE — Service Worker v4.1
+// SAGAE — Service Worker v4.2
 // Sistema de Activos y Gestión Administrativa Educativa
 // Desarrollado por RYE Design
 // ════════════════════════════════════════════════════════════════════
 
-const CACHE_NAME   = 'sagae-mobile-v4.1';
-const CACHE_STATIC = 'sagae-static-v4.1';
+// v4.2: pantallas del servidor v10.3 (2FA pide contrasena al desactivar/cambiar telefono; fotos sin permiso).
+const CACHE_NAME   = 'sagae-mobile-v4.2';
+const CACHE_STATIC = 'sagae-static-v4.2';
 
 // Recursos a cachear para funcionamiento offline
 // (Corrección histórica v1.7: antes apuntaba a index.html —panel de
@@ -136,7 +137,7 @@ const OPTIONAL_ASSETS = [
 
 // ── INSTALL — cachear recursos estáticos ─────────────────────────
 self.addEventListener('install', event => {
-  console.log('[SAGAE SW] Instalando v4.1...');
+  console.log('[SAGAE SW] Instalando v4.2...');
   event.waitUntil(
     caches.open(CACHE_STATIC).then(cache => {
       return cache.addAll(STATIC_ASSETS).catch(err => {
@@ -153,7 +154,7 @@ self.addEventListener('install', event => {
 
 // ── ACTIVATE — limpiar caches viejos ─────────────────────────────
 self.addEventListener('activate', event => {
-  console.log('[SAGAE SW] Activando v4.1...');
+  console.log('[SAGAE SW] Activando v4.2...');
   event.waitUntil(
     caches.keys().then(cacheNames => {
       return Promise.all(
@@ -276,4 +277,4 @@ self.addEventListener('message', event => {
   }
 });
 
-console.log('[SAGAE SW] Service Worker v4.1 cargado correctamente');
+console.log('[SAGAE SW] Service Worker v4.2 cargado correctamente');

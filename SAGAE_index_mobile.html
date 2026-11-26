@@ -1240,6 +1240,8 @@ const _MSG_ERR_SERVIDOR={
   HISTORIAL_INVALIDO:'El historial del registro no es válido. Recarga la pantalla e intenta de nuevo.',
   FOTOS_INVALIDAS:'Las fotos no son válidas. Revisa las fotos adjuntas e intenta de nuevo.',
   DEMASIADAS_FOTOS:'Un ticket admite máximo 5 fotos.',
+  PASSWORD_ACTUAL_INCORRECTA:'La contraseña actual no es correcta.',
+  FORBIDDEN:'No tienes permiso para esta acción.',
   RATE_LIMIT:'Demasiadas acciones seguidas. Espera un momento e intenta de nuevo.',
   CAMBIO_PASSWORD_OBLIGATORIO:'Debes cambiar tu contraseña temporal antes de continuar.',
   TERMINOS_PENDIENTES:'Debes aceptar los Términos de Uso y el Aviso de Privacidad antes de continuar.',
@@ -2193,7 +2195,7 @@ function agregarFotoMantenimientoMobile(){
       }else if(data && data.error==='TIMEOUT'){
         showToast('⏱ La subida tardó demasiado. Verifica tu señal y vuelve a intentar.','error');
       }else{
-        showToast('Error al subir: '+(data?.error||'sin respuesta'),'error');
+        showToast('Error al subir: '+_msgServidor(data),'error');
       }
     }catch(e){
       showToast('Error: '+e.message,'error');
@@ -2242,7 +2244,7 @@ function agregarFotoTicketMobile(){
       }else if(data && data.error==='TIMEOUT'){
         showMobToast('⏱ La subida tardó demasiado. Verifica tu señal y vuelve a intentar.');
       }else{
-        showMobToast('Error al subir: '+(data?.error||'sin respuesta'));
+        showMobToast('Error al subir: '+_msgServidor(data));
       }
     }catch(e){
       showMobToast('Error: '+e.message);
@@ -3097,8 +3099,8 @@ window.addEventListener("offline",()=>{
   setSyncStatus(false);
 });
 if("serviceWorker" in navigator){
-  navigator.serviceWorker.register("sw.js?v=4.1").then(reg=>{
-    console.log("[SAGAE] SW registrado v4.1:", reg.scope);
+  navigator.serviceWorker.register("sw.js?v=4.2").then(reg=>{
+    console.log("[SAGAE] SW registrado v4.2:", reg.scope);
     reg.addEventListener("updatefound", ()=>{
       const newWorker = reg.installing;
       if(!newWorker) return;
@@ -3589,7 +3591,7 @@ function abrirSubidaFotoMobile(targetInputId, previewId, btnId, modulo){
       } else if(data && data.error==='TIMEOUT'){
         showMobToast('⏱ La subida tardó demasiado. Verifica tu señal y vuelve a intentar.');
       } else {
-        showMobToast('Error al subir: '+(data?.error||'sin respuesta'));
+        showMobToast('Error al subir: '+_msgServidor(data));
       }
     } catch(e){
       showMobToast('Error: '+e.message);
@@ -3642,6 +3644,7 @@ async function verFotoPrivada(url){
   try{
     const r = await fetch(API+'?action=fotoBase64&fileId='+encodeURIComponent(fileId)+'&session='+encodeURIComponent(session.token));
     const d = await r.json();
+    if(d && d.error==='FORBIDDEN'){ showToast('🔒 Sin permiso para ver esta foto.','error'); return; }
     if(!d || !d.ok || !d.data) throw new Error((d && d.error) || 'sin datos');
     const mime = String(d.mime || 'image/jpeg');
     const bin = atob(d.data);

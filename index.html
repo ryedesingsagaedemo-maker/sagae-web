@@ -3713,7 +3713,11 @@ function _render2FASeccion_(activo){
         <span style="font-size:18px">✅</span>
         <div style="flex:1;font-size:12px;color:var(--green)"><strong>Activada</strong> — te pedirá el código de tu app cada vez que inicies sesión.</div>
       </div>
-      <button class="btn" style="margin-top:10px;color:var(--red)" onclick="desactivar2FA()">Desactivar verificación en dos pasos</button>`;
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+        <button class="btn" onclick="iniciarActivacion2FA(true)">📱 Cambiar de teléfono</button>
+        <button class="btn" style="color:var(--red)" onclick="desactivar2FA()">Desactivar verificación en dos pasos</button>
+      </div>
+      <div id="perfil-2fa-pass" style="margin-top:10px"></div>`;
   } else {
     el.innerHTML = `
       <div style="font-size:12px;color:var(--text2);margin-bottom:10px">
@@ -3723,13 +3727,15 @@ function _render2FASeccion_(activo){
   }
 }
 
-async function iniciarActivacion2FA(){
+let _2faCambio = false; // true = la cuenta ya tiene 2FA y se está cambiando de teléfono (pide contraseña)
+async function iniciarActivacion2FA(cambio){
+  _2faCambio = (cambio===true);
   const el = document.getElementById('perfil-2fa-content');
   el.innerHTML = `<div style="font-size:12px;color:var(--text3)">Generando código secreto...</div>`;
   const resp = await apiPostAsync(null,'totp_generar',{});
   if(!resp || !resp.ok){
     showToast('⚠ No se pudo generar el código. Intenta de nuevo.','error');
-    _render2FASeccion_(false);
+    _render2FASeccion_(_2faCambio);
     return;
   }
   _2faPendiente = resp; // {secret, otpauthUrl} — todavía no está guardado en el servidor
@@ -3744,8 +3750,9 @@ async function iniciarActivacion2FA(){
     </div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:8px">2. Escribe el código de 6 dígitos que te muestra la app para confirmar:</div>
     <div class="f-row"><input class="f-inp" id="confirmar-2fa-codigo" maxlength="6" inputmode="numeric" placeholder="000000" style="letter-spacing:4px;font-size:18px;text-align:center;max-width:180px"></div>
+    ${_2faCambio?`<div class="f-row" style="margin-top:10px"><label class="f-lbl">3. Tu contraseña actual (para confirmar el cambio)</label><input class="f-inp" id="confirmar-2fa-pass" type="password" autocomplete="current-password" style="max-width:260px"></div>`:''}
     <div style="display:flex;gap:8px;margin-top:10px">
-      <button class="btn" onclick="_render2FASeccion_(false)">Cancelar</button>
+      <button class="btn" onclick="_2faPendiente=null;_render2FASeccion_(_2faCambio)">Cancelar</button>
       <button class="btn btn-p" onclick="confirmarActivacion2FA()">Confirmar y activar</button>
     </div>`;
   if(typeof QRCode !== 'undefined'){
@@ -3756,7 +3763,13 @@ async function iniciarActivacion2FA(){
 async function confirmarActivacion2FA(){
   const codigo = document.getElementById('confirmar-2fa-codigo').value.trim();
   if(!codigo || codigo.length!==6 || !_2faPendiente){ showToast('Ingresa el código de 6 dígitos.','error'); return; }
-  const resp = await apiPostAsync(null,'totp_activar',{secret:_2faPendiente.secret, codigo});
+  const datos = {secret:_2faPendiente.secret, codigo};
+  if(_2faCambio){
+    const pw = (document.getElementById('confirmar-2fa-pass')||{}).value||'';
+    if(!pw){ showToast('Escribe tu contraseña actual.','error'); return; }
+    datos.password = pw;
+  }
+  const resp = await apiPostAsync(null,'totp_activar',datos);
   if(resp && resp.ok){
     const idx = usuarios.findIndex(x=>x.username===session.username);
     if(idx>=0){ usuarios[idx].totpEnabled=true; }
@@ -3765,8 +3778,10 @@ async function confirmarActivacion2FA(){
     _render2FASeccion_(true);
   }else if(resp && resp.error==='TOTP_EXPIRADO'){
     _2faPendiente = null;
-    _render2FASeccion_(false);
+    _render2FASeccion_(_2faCambio);
     showToast('⚠ El código QR expiró. Genera uno nuevo.','error');
+  }else if(resp && (resp.error==='PASSWORD_ACTUAL_INCORRECTA' || resp.error==='BLOCKED')){
+    showToast('⚠ '+_msgPass2FA(resp),'error');
   }else{
     showToast('⚠ Código incorrecto, intenta de nuevo','error');
   }
@@ -3813,16 +3828,35 @@ function enr2faSalir(){
   setTimeout(()=>location.reload(),300);
 }
 
-async function desactivar2FA(){
-  if(!confirm('¿Desactivar la verificación en dos pasos? A partir de ahora, tu contraseña sola volverá a ser suficiente para entrar.')) return;
-  const resp = await apiPostAsync(null,'totp_desactivar',{});
-  if(resp && resp.ok){
+function _msgPass2FA(resp){
+  if(resp && resp.error==='PASSWORD_ACTUAL_INCORRECTA') return 'La contraseña actual no es correcta.';
+  if(resp && resp.error==='BLOCKED') return resp.message || 'Demasiados intentos. Espera 15 minutos e intenta de nuevo.';
+  return (resp&&resp.message) || 'No se pudo completar. Intenta de nuevo.';
+}
+function desactivar2FA(){
+  const el = document.getElementById('perfil-2fa-pass');
+  if(!el) return;
+  el.innerHTML = `
+    <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Para desactivar, escribe tu contraseña actual. Tu contraseña sola volverá a ser suficiente para entrar.</div>
+    <div class="f-row"><input class="f-inp" id="desactivar-2fa-pass" type="password" autocomplete="current-password" placeholder="Contraseña actual" style="max-width:260px"></div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn" onclick="document.getElementById('perfil-2fa-pass').innerHTML=''">Cancelar</button>
+      <button class="btn btn-p" id="desactivar-2fa-ok" onclick="confirmarDesactivar2FA()">Confirmar</button>
+    </div>`;
+  document.getElementById('desactivar-2fa-pass').focus();
+}
+async function confirmarDesactivar2FA(){
+  const pw = (document.getElementById('desactivar-2fa-pass')||{}).value||'';
+  if(!pw){ showToast('Escribe tu contraseña actual.','error'); return; }
+  const resp = await apiPostAsync(null,'totp_desactivar',{password:pw});
+  if(resp && resp.ok===true){
     const idx = usuarios.findIndex(x=>x.username===session.username);
     if(idx>=0){ usuarios[idx].totpEnabled=false; }
     showToast('Verificación en dos pasos desactivada','');
     _render2FASeccion_(false);
   }else{
-    showToast('⚠ '+((resp&&resp.message)?resp.message:'No se pudo desactivar. Intenta de nuevo.'),'error');
+    showToast('⚠ '+_msgPass2FA(resp),'error');
+    const i=document.getElementById('desactivar-2fa-pass'); if(i){ i.value=''; i.focus(); }
   }
 }
 let _2faPendiente = null;
@@ -4670,7 +4704,7 @@ function agregarFotoTicketAdmin(){
         _renderGaleriaFotosAdmin(_etFotosActuales);
         showToast('Foto agregada ✓','success');
       }else{
-        showToast('No se pudo subir la foto: '+(data?.error||'sin respuesta'),'error');
+        showToast('No se pudo subir la foto: '+_impMotivo(data),'error');
       }
     }catch(e){
       showToast('Error al subir la foto: '+e.message,'error');
@@ -4745,7 +4779,7 @@ function agregarFotoMantenimiento(){
         _renderGaleriaFotosMant();
         showToast('Foto agregada ✓','success');
       }else{
-        showToast('No se pudo subir la foto: '+(data?.error||'sin respuesta'),'error');
+        showToast('No se pudo subir la foto: '+_impMotivo(data),'error');
       }
     }catch(e){
       showToast('Error al subir la foto: '+e.message,'error');
@@ -7152,7 +7186,7 @@ async function imprimirExpedienteTicket(codigo){
       const r = await fetch(API+'?action=fotoBase64&fileId='+m[1]+'&session='+encodeURIComponent(session.token));
       const j = await r.json();
       if(j && j.ok) return {...f, dataUrl:'data:'+j.mime+';base64,'+j.data};
-      return {...f, dataUrl:null};
+      return {...f, dataUrl:null, sinPermiso:!!(j && j.error==='FORBIDDEN')};
     }catch(e){ return {...f, dataUrl:null}; }
   }));
 
@@ -7172,7 +7206,7 @@ async function imprimirExpedienteTicket(codigo){
       _fecha: parseFechaRegistro(f.fecha),
       tipo: '📷 Foto adjunta', desc: f.nota||'', fecha: f.fecha||'',
       usuario: f.usuario||'—', color: '#7C3AED',
-      foto: f.dataUrl, fotoOriginal: f.url
+      foto: f.dataUrl, fotoOriginal: f.url, sinPermiso: !!f.sinPermiso
     });
   });
   eventos.sort((a,b)=>(a._fecha||0)-(b._fecha||0));
@@ -7184,6 +7218,7 @@ async function imprimirExpedienteTicket(codigo){
         <div class="exp-item-tipo">${_escHtml(e.tipo)}</div>
         <div class="exp-item-meta">${_escHtml(e.fecha)} · ${_escHtml(e.usuario)}</div>
         ${e.desc?`<div class="exp-item-desc">${_escHtml(e.desc)}</div>`:''}
+        ${(!e.foto && e.sinPermiso)?`<div style="font-size:8pt;color:#6B7280;">🔒 Foto sin permiso: tu cuenta no puede ver las fotos de este módulo.</div>`:''}
         ${e.foto?`<img class="exp-item-foto" src="${_escHtml(_safeUrl(e.foto))}" onerror="this.style.display='none';this.nextElementSibling.style.display='block';"><div style="display:none;font-size:8pt;color:#B91C1C;">⚠ La foto no se pudo cargar. Ábrela directamente: <a href="${_escHtml(_safeUrl(e.fotoOriginal))}">${_escHtml(e.fotoOriginal)}</a></div>`:''}
       </div>
     </div>`).join('') : '<div style="padding:6mm 0;color:#888;font-size:9pt">Sin eventos registrados.</div>';
@@ -7265,7 +7300,7 @@ async function imprimirExpedienteActivo(codigo){
       try{
         const r = await fetch(API+'?action=fotoBase64&fileId='+m[1]+'&session='+encodeURIComponent(session.token));
         const j = await r.json();
-        return j && j.ok ? {...f, dataUrl:'data:'+j.mime+';base64,'+j.data} : {...f, dataUrl:null};
+        return j && j.ok ? {...f, dataUrl:'data:'+j.mime+';base64,'+j.data} : {...f, dataUrl:null, sinPermiso:!!(j && j.error==='FORBIDDEN')};
       }catch(e){ return {...f, dataUrl:null}; }
     }));
     return {...h, _fotosConDatos: fotos};
@@ -7282,6 +7317,7 @@ async function imprimirExpedienteActivo(codigo){
         ${(h._fotosConDatos||[]).map(f=>
           f.dataUrl
             ? `<img class="exp-item-foto" src="${_escHtml(_safeUrl(f.dataUrl))}">${f.nota?`<div style="font-size:8pt;color:#666;margin-top:1mm">${_escHtml(f.nota)}</div>`:''}`
+            : f.sinPermiso ? `<div style="font-size:8pt;color:#6B7280;">🔒 Foto sin permiso: tu cuenta no puede ver las fotos de este módulo.</div>`
             : `<div style="font-size:8pt;color:#B91C1C;">⚠ Una foto de este evento no se pudo cargar. Ábrela directamente: <a href="${_escHtml(_safeUrl(f.url))}">${_escHtml(f.url)}</a></div>`
         ).join('')}
       </div>
@@ -7908,6 +7944,8 @@ const _MSG_ERR_SERVIDOR={
   HISTORIAL_INVALIDO:'El historial del registro no es válido. Recarga la pantalla e intenta de nuevo.',
   FOTOS_INVALIDAS:'Las fotos no son válidas. Revisa las fotos adjuntas e intenta de nuevo.',
   DEMASIADAS_FOTOS:'Un ticket admite máximo 5 fotos.',
+  PASSWORD_ACTUAL_INCORRECTA:'La contraseña actual no es correcta.',
+  FORBIDDEN:'No tienes permiso para esta acción.',
   RATE_LIMIT:'Demasiadas acciones seguidas. Espera un momento e intenta de nuevo.',
   CAMBIO_PASSWORD_OBLIGATORIO:'Debes cambiar tu contraseña temporal antes de continuar.',
   TERMINOS_PENDIENTES:'Debes aceptar los Términos de Uso y el Aviso de Privacidad antes de continuar.',
@@ -10383,7 +10421,7 @@ async function _subirArchivoADrive(file, targetInputId, modulo){
       }
       showToast('✅ Archivo subido correctamente','success');
     } else {
-      showToast('Error al subir: '+(result?.error||'sin respuesta'),'');
+      showToast('Error al subir: '+_impMotivo(result),'');
     }
   } catch(e) {
     showToast('Error al subir archivo: '+e.message,'');
@@ -11316,6 +11354,7 @@ async function verFotoPrivada(url){
   try{
     const r = await fetch(API+'?action=fotoBase64&fileId='+encodeURIComponent(fileId)+'&session='+encodeURIComponent(session.token));
     const d = await r.json();
+    if(d && d.error==='FORBIDDEN'){ showToast('🔒 Sin permiso para ver esta foto.','error'); return; }
     if(!d || !d.ok || !d.data) throw new Error((d && d.error) || 'sin datos');
     const mime = String(d.mime || 'image/jpeg');
     const bin = atob(d.data);
