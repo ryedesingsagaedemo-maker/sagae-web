@@ -1,5 +1,5 @@
 {
-  "avisoVersion": "2.1-borrador",
+  "avisoVersion": "2.2-borrador",
   "terminosVersion": "1.1-borrador",
   "proveedores": [
     {
@@ -61,7 +61,7 @@
       "archivos": [
         "SAGAE_portal_reportes.html"
       ],
-      "proposito": "Identificador aleatorio del dispositivo para limitar envíos (anti-spam)",
+      "proposito": "Identificador aleatorio del dispositivo para limitar envíos (anti-spam); solo se usa en reportes con nombre (los anónimos usan uno aleatorio por envío)",
       "plazo": "Sin vencimiento propio; hasta que el usuario borre los datos del sitio",
       "mencionEnAviso": "sagae_portal_device"
     },
@@ -89,7 +89,8 @@
   "huellas": {
     "aviso-privacidad.html": {
       "2.0-borrador": "44bfbbcf365cfe072e923c5f58c85fdb0175e83a789c870f10e6d9f262936d06",
-      "2.1-borrador": "3541b19380112f495bd89abe54fb65a52968f516997740d852fbdf1cbe3c1f1c"
+      "2.1-borrador": "3541b19380112f495bd89abe54fb65a52968f516997740d852fbdf1cbe3c1f1c",
+      "2.2-borrador": "5d61d8a3cec799270fdcf132404e992d3a70fbf1a6ad4b0b533b73be7a7a2597"
     },
     "terminos-de-uso.html": {
       "1.0-borrador": "8b86c20d28ad67d9c4a35a6dced869255dd6e87dd7714dcffb7856a82e737b94",
