@@ -1,6 +1,6 @@
 {
-  "avisoVersion": "2.0-borrador",
-  "terminosVersion": "1.0-borrador",
+  "avisoVersion": "2.1-borrador",
+  "terminosVersion": "1.1-borrador",
   "proveedores": [
     {
       "host": "script.google.com",
@@ -88,10 +88,12 @@
   ],
   "huellas": {
     "aviso-privacidad.html": {
-      "2.0-borrador": "44bfbbcf365cfe072e923c5f58c85fdb0175e83a789c870f10e6d9f262936d06"
+      "2.0-borrador": "44bfbbcf365cfe072e923c5f58c85fdb0175e83a789c870f10e6d9f262936d06",
+      "2.1-borrador": "3541b19380112f495bd89abe54fb65a52968f516997740d852fbdf1cbe3c1f1c"
     },
     "terminos-de-uso.html": {
-      "1.0-borrador": "8b86c20d28ad67d9c4a35a6dced869255dd6e87dd7714dcffb7856a82e737b94"
+      "1.0-borrador": "8b86c20d28ad67d9c4a35a6dced869255dd6e87dd7714dcffb7856a82e737b94",
+      "1.1-borrador": "6467603e3bf6ee9184adec14889ad01dabdc6063d3d0c20467e03a5f4fa4cc5e"
     }
   }
 }
