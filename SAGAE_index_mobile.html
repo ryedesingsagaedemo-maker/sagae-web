@@ -231,6 +231,16 @@ html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFo
 #update-banner.show{display:flex;}
 #update-banner button{background:#C9A84C;color:#1B3A6B;border:none;border-radius:6px;padding:5px 14px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;}
 @keyframes slideDown{from{transform:translateY(-100%)}to{transform:translateY(0)}}
+#terminos-screen{display:none;position:fixed;inset:0;z-index:9500;background:var(--bg);overflow-y:auto;padding:24px;align-items:center;justify-content:center;}
+.terminos-card{background:var(--bg2);border-radius:var(--r-md);padding:24px 20px;width:100%;max-width:420px;box-shadow:0 8px 30px rgba(0,0,0,.18);}
+.terminos-title{font-size:18px;font-weight:700;color:var(--navy);margin-bottom:8px;}
+.terminos-sub{font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:14px;}
+.terminos-links{font-size:14px;margin-bottom:14px;}
+.terminos-links a{color:var(--navy);font-weight:600;}
+.terminos-chk{display:flex;gap:10px;align-items:flex-start;font-size:14px;margin-bottom:14px;}
+.terminos-chk input{margin-top:3px;width:18px;height:18px;flex-shrink:0;}
+.terminos-err{display:none;color:#b91c1c;font-size:13px;margin-bottom:10px;}
+#terminos-btn:disabled{opacity:.45;cursor:not-allowed;}
 </style>
 <script src="config.js"></script>
 <script src="vendor/html5-qrcode.min.js"></script>
@@ -621,6 +631,23 @@ html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFo
       <div class="pass-wrap"><input class="form-input" type="password" id="fp-pass2" placeholder="Repite tu contraseña"><button class="pass-toggle" onclick="togglePass('fp-pass2',this)" type="button">👁</button></div>
     </div>
     <button class="btn-primary" id="fp-btn" onclick="saveForcePass()">Guardar mi contraseña</button>
+    <button class="btn-secondary" type="button" style="margin-top:10px;width:100%;" onclick="forzarPassSalir()">Cerrar sesión</button>
+  </div>
+</div>
+<div id="terminos-screen">
+  <div class="terminos-card" role="dialog" aria-modal="true" aria-labelledby="terminos-titulo">
+    <div class="terminos-title" id="terminos-titulo">Términos de Uso</div>
+    <div class="terminos-sub">Para usar SAGAE debes leer y aceptar los Términos de Uso y el Aviso de Privacidad. Se te pedirá de nuevo solo si cambian.</div>
+    <div class="terminos-links">
+      <a href="terminos-de-uso.html" target="_blank" rel="noopener">Términos de Uso</a> &nbsp;·&nbsp;
+      <a href="aviso-privacidad.html" target="_blank" rel="noopener">Aviso de Privacidad</a>
+    </div>
+    <label class="terminos-chk">
+      <input type="checkbox" id="terminos-chk" onchange="document.getElementById('terminos-btn').disabled=!this.checked">
+      <span>He leído y acepto los Términos de Uso (versión <b id="terminos-ver"></b>) y el Aviso de Privacidad</span>
+    </label>
+    <div class="terminos-err" id="terminos-err"></div>
+    <button class="btn-primary" id="terminos-btn" type="button" disabled onclick="aceptarTerminosMobile()">Aceptar</button>
     <button class="btn-secondary" type="button" style="margin-top:10px;width:100%;" onclick="forzarPassSalir()">Cerrar sesión</button>
   </div>
 </div>
@@ -1149,6 +1176,7 @@ async function apiGet(sheet, intento=1){
     const d=await r.json();
     if(d && d.ok===false && d.error==='SESSION_INVALID'){ _sesionExpiradaMobile(); return []; }
     if(d && d.ok===false && d.error==='CAMBIO_PASSWORD_OBLIGATORIO'){ _mostrarForzarPassMobile(); return []; }
+    if(d && d.ok===false && d.error==='TERMINOS_PENDIENTES'){ _mostrarTerminosMobile(null,_refrescarTrasTerminosMobile); return []; }
     return Array.isArray(d)?d:[];
   }
   catch(e){
@@ -1204,6 +1232,8 @@ const _MSG_ERR_SERVIDOR={
   DEMASIADAS_FOTOS:'Un ticket admite máximo 5 fotos.',
   RATE_LIMIT:'Demasiadas acciones seguidas. Espera un momento e intenta de nuevo.',
   CAMBIO_PASSWORD_OBLIGATORIO:'Debes cambiar tu contraseña temporal antes de continuar.',
+  TERMINOS_PENDIENTES:'Debes aceptar los Términos de Uso y el Aviso de Privacidad antes de continuar.',
+  VERSION_TERMINOS_INVALIDA:'La versión de los términos cambió. Cierra la sesión y vuelve a entrar para ver la vigente.',
   HISTORIAL_GUARDADO_DANADO:'El historial de este registro está dañado; avisa al administrador.',
   HISTORIAL_LLENO:'El historial de este registro llegó a su límite; avisa al administrador.'
 };
@@ -1231,6 +1261,7 @@ async function apiPostAsync(sheet, action, payload, timeoutMs=60000){
       if(r.ok){
         const d = await r.json();
         if(d && d.error==='CAMBIO_PASSWORD_OBLIGATORIO' && action!=='cambiar_mi_password') _mostrarForzarPassMobile();
+        if(d && d.error==='TERMINOS_PENDIENTES' && action!=='aceptar_terminos') _mostrarTerminosMobile(null,_refrescarTrasTerminosMobile);
         if(d && typeof d==='object' && !Array.isArray(d) && !d.pending) return d;
       }
     }catch(e){ }
@@ -1238,6 +1269,60 @@ async function apiPostAsync(sheet, action, payload, timeoutMs=60000){
     if(intervalo < 2000) intervalo = Math.min(intervalo * 1.4, 2000);
   }
   return {ok:false, error:'TIMEOUT', message:'El servidor tardó demasiado en responder. Intenta de nuevo.'};
+}
+/* v10.1: Términos de Uso. El servidor deja la sesión restringida hasta aceptar la versión vigente. */
+let _terminosVerMob=null, _terminosOkMob=null, _terminosPendMob=false;
+async function _versionTerminosMobile(){
+  if(_terminosVerMob) return _terminosVerMob;
+  try{
+    const r=await fetch(API+"?action=config&t="+Date.now(),{mode:"cors"});
+    const d=await r.json();
+    if(d && d.ok && d.terminosVersion) _terminosVerMob=String(d.terminosVersion);
+  }catch(e){}
+  return _terminosVerMob;
+}
+async function _mostrarTerminosMobile(version, alExito){
+  if(alExito) _terminosOkMob=alExito;
+  if(version) _terminosVerMob=String(version);
+  const pantalla=document.getElementById("terminos-screen");
+  if(pantalla.style.display==="flex") return;
+  pantalla.style.display="flex"; // se muestra ya (cubre todo); la versión se completa enseguida
+  document.getElementById("login-screen").style.display="none";
+  document.getElementById("app").classList.remove("visible");
+  document.getElementById("force-pass-screen").style.display="none";
+  document.getElementById("terminos-chk").checked=false;
+  document.getElementById("terminos-btn").disabled=true;
+  const err=document.getElementById("terminos-err");
+  err.style.display="none";
+  const ver=await _versionTerminosMobile();
+  document.getElementById("terminos-ver").textContent=ver||"";
+  if(!ver){ err.textContent="No se pudo consultar la versión de los términos. Cierra la sesión e inténtalo de nuevo."; err.style.display="block"; document.getElementById("terminos-chk").disabled=true; }
+  else document.getElementById("terminos-chk").disabled=false;
+}
+async function aceptarTerminosMobile(){
+  const err=document.getElementById("terminos-err"),btn=document.getElementById("terminos-btn");
+  if(!document.getElementById("terminos-chk").checked||!_terminosVerMob) return;
+  err.style.display="none"; btn.disabled=true; btn.textContent="Guardando...";
+  let resp;
+  try{ resp=await apiPostAsync(null,"aceptar_terminos",{version:_terminosVerMob}); }
+  catch(e){ resp={ok:false,error:"NETWORK",message:"No se pudo conectar con el servidor. Intenta de nuevo."}; }
+  btn.textContent="Aceptar"; btn.disabled=false;
+  if(!resp || resp.ok!==true){
+    if(resp && resp.error==="VERSION_TERMINOS_INVALIDA") _terminosVerMob=null;
+    err.textContent=(resp && resp.error==="SESSION_INVALID") ? "Tu sesión expiró. Cierra la app e inicia sesión de nuevo." : _msgServidor(resp,"Sin respuesta del servidor. Intenta de nuevo.");
+    err.style.display="block"; return;
+  }
+  document.getElementById("terminos-screen").style.display="none";
+  _terminosPendMob=false;
+  const cb=_terminosOkMob; _terminosOkMob=null;
+  if(cb) await cb();
+}
+async function _refrescarTrasTerminosMobile(){
+  try{
+    await cargarDatosPostLogin();
+    document.getElementById("app").classList.add("visible");
+    renderDashboard();renderTickets();renderActivos();renderReportes();updateBadge();
+  }catch(e){}
 }
 async function cargarNombreInstitucion(){
   const el = document.getElementById('login-institucion');
@@ -1590,8 +1675,16 @@ async function _completarLoginExitosoMobile_(resp, usernameIngresado, err){
   mostrarBotonEscaner();
   const mustChange = resp.mustChange===true || resp.mustChange==='true' || resp.mustChange==='TRUE';
   if(mustChange){
+    _terminosPendMob = resp.terminosPendiente===true; // v10.1: tras la contraseña, los términos
+    if(_terminosPendMob && resp.terminosVersion) _terminosVerMob=String(resp.terminosVersion);
     document.getElementById("login-screen").style.display="none";
     document.getElementById("force-pass-screen").style.display="flex";
+    return;
+  }
+  if(resp.terminosPendiente===true){
+    // v10.1: términos sin aceptar. No se carga nada hasta que el servidor confirme la aceptación.
+    document.getElementById("login-screen").style.display="none";
+    _mostrarTerminosMobile(resp.terminosVersion,()=>_completarLoginExitosoMobile_({...resp, terminosPendiente:false}, usernameIngresado, err));
     return;
   }
   apiPost("auditoria","insert",{ts:ts(),usuario:usernameIngresado,nombre:resp.nombre,rol:resp.rol,accion:"LOGIN",tipo:"Sistema",codigo:"MOBILE",detalle:"Acceso desde app móvil SAGAE"});
@@ -2859,7 +2952,11 @@ function iniciarControlSesionUnicaMobile(){
     if(!session||!session.token) return;
     try{
       const r = await apiPostAsync(null,'session_check',{_sessionToken:session.token});
-      if(r && r.ok) return;
+      if(r && r.ok){
+        // v10.1: el servidor subió la versión de los términos con la sesión abierta
+        if(r.terminosPendiente===true) _mostrarTerminosMobile(r.terminosVersion,_refrescarTrasTerminosMobile);
+        return;
+      }
       if(!(r && r.error === 'SESSION_INVALID')){
         console.warn('[SAGAE] session_check sin confirmación del servidor — se reintentará.');
         return;
@@ -2956,6 +3053,15 @@ async function saveForcePass(){
     err.textContent=m;err.style.display="block";
     return;
   }
+  if(_terminosPendMob){
+    // v10.1: contraseña lista; faltan los términos. Hasta aceptarlos el servidor rechaza todo lo demás.
+    document.getElementById("force-pass-screen").style.display="none";
+    _mostrarTerminosMobile(null,_finalizarForcePassMobile);
+    return;
+  }
+  await _finalizarForcePassMobile();
+}
+async function _finalizarForcePassMobile(){
   await apiPost("auditoria","insert",{ts:ts(),usuario:session.username,nombre:session.nombre,rol:session.rol,accion:"EDITAR",tipo:"Usuario",codigo:session.username,detalle:"Cambio de contraseña forzado al primer acceso — App Móvil"});
   await cargarDatosPostLogin();
   document.getElementById("force-pass-screen").style.display="none";
@@ -2981,8 +3087,8 @@ window.addEventListener("offline",()=>{
   setSyncStatus(false);
 });
 if("serviceWorker" in navigator){
-  navigator.serviceWorker.register("sw.js?v=4.0").then(reg=>{
-    console.log("[SAGAE] SW registrado v4.0:", reg.scope);
+  navigator.serviceWorker.register("sw.js?v=4.1").then(reg=>{
+    console.log("[SAGAE] SW registrado v4.1:", reg.scope);
     reg.addEventListener("updatefound", ()=>{
       const newWorker = reg.installing;
       if(!newWorker) return;

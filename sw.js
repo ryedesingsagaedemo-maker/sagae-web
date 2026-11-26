@@ -1,11 +1,11 @@
 // ════════════════════════════════════════════════════════════════════
-// SAGAE — Service Worker v4.0
+// SAGAE — Service Worker v4.1
 // Sistema de Activos y Gestión Administrativa Educativa
 // Desarrollado por RYE Design
 // ════════════════════════════════════════════════════════════════════
 
-const CACHE_NAME   = 'sagae-mobile-v4.0';
-const CACHE_STATIC = 'sagae-static-v4.0';
+const CACHE_NAME   = 'sagae-mobile-v4.1';
+const CACHE_STATIC = 'sagae-static-v4.1';
 
 // Recursos a cachear para funcionamiento offline
 // (Corrección histórica v1.7: antes apuntaba a index.html —panel de
@@ -112,6 +112,8 @@ const CACHE_STATIC = 'sagae-static-v4.0';
 // v3.9: SEGURIDAD — los identificadores de cada solicitud al servidor ahora son impredecibles
 //   (antes se generaban con Math.random). Se sube el numero de cache para que todos los telefonos
 //   reciban la version nueva automaticamente.
+// v4.1: TERMINOS DE USO - el programa pide aceptar los Terminos de Uso y el Aviso de Privacidad en el primer
+//   ingreso (y cuando cambia su version); ambos documentos abren tambien sin conexion. Se sube el numero de cache.
 const STATIC_ASSETS = [
   './',
   './SAGAE_index_mobile.html',
@@ -128,12 +130,13 @@ const STATIC_ASSETS = [
 // Recursos OPCIONALES: se guardan uno por uno y, si alguno falta, no se pierde el resto
 // (cache.addAll es de todo o nada). El Aviso de Privacidad debe abrir aun sin señal.
 const OPTIONAL_ASSETS = [
-  './aviso-privacidad.html'
+  './aviso-privacidad.html',
+  './terminos-de-uso.html'
 ];
 
 // ── INSTALL — cachear recursos estáticos ─────────────────────────
 self.addEventListener('install', event => {
-  console.log('[SAGAE SW] Instalando v4.0...');
+  console.log('[SAGAE SW] Instalando v4.1...');
   event.waitUntil(
     caches.open(CACHE_STATIC).then(cache => {
       return cache.addAll(STATIC_ASSETS).catch(err => {
@@ -150,7 +153,7 @@ self.addEventListener('install', event => {
 
 // ── ACTIVATE — limpiar caches viejos ─────────────────────────────
 self.addEventListener('activate', event => {
-  console.log('[SAGAE SW] Activando v4.0...');
+  console.log('[SAGAE SW] Activando v4.1...');
   event.waitUntil(
     caches.keys().then(cacheNames => {
       return Promise.all(
@@ -273,4 +276,4 @@ self.addEventListener('message', event => {
   }
 });
 
-console.log('[SAGAE SW] Service Worker v4.0 cargado correctamente');
+console.log('[SAGAE SW] Service Worker v4.1 cargado correctamente');

@@ -5291,7 +5291,11 @@ function iniciarControlSesionUnica(){
     if(!session || !session.token) return;
     try{
       const r = await apiPostAsync(null,'session_check',{_sessionToken:session.token});
-      if(r && r.ok) return; // sesión sigue válida, nada que hacer
+      if(r && r.ok){
+        // v10.1: el servidor subió la versión de los términos con la sesión abierta
+        if(r.terminosPendiente===true) _mostrarTerminos(r.terminosVersion,()=>{ loadFromSheets().then(()=>{ try{renderAll();}catch(e){} }); });
+        return; // sesión sigue válida, nada más que hacer
+      }
       // ── NO cerrar sesión por una simple falla de red o timeout ──────
       // Antes, cualquier resultado que no fuera "ok:true" se trataba como
       // sesión inválida — incluyendo cuando el servidor simplemente no
