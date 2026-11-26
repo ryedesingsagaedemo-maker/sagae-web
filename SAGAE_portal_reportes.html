@@ -126,11 +126,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;ba
       <div class="form-row-2" id="bloque-identidad">
         <div class="form-group">
           <label class="form-label">Tu nombre <span>*</span></label>
-          <input class="form-input" id="f-nombre" type="text" placeholder="Ej: María González" autocomplete="name">
+          <input class="form-input" id="f-nombre" type="text" maxlength="80" placeholder="Ej: María González" autocomplete="name">
         </div>
         <div class="form-group">
           <label class="form-label">Correo electrónico <span>*</span></label>
-          <input class="form-input" id="f-correo" type="email" placeholder="tu@correo.com" autocomplete="email">
+          <input class="form-input" id="f-correo" type="email" maxlength="120" placeholder="tu@correo.com" autocomplete="email">
         </div>
       </div>
       <div class="form-row-2">
@@ -159,11 +159,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;ba
       </div>
       <div class="form-group">
         <label class="form-label">Título del problema <span>*</span></label>
-        <input class="form-input" id="f-titulo" type="text" placeholder="Ej: El proyector del aula 3B no enciende">
+        <input class="form-input" id="f-titulo" type="text" maxlength="120" placeholder="Ej: El proyector del aula 3B no enciende">
       </div>
       <div class="form-group">
         <label class="form-label">Descripción detallada <span>*</span></label>
-        <textarea class="form-textarea" id="f-desc" placeholder="Describe con detalle el problema:&#10;• ¿Qué estabas haciendo cuando ocurrió?&#10;• ¿Cuándo comenzó el problema?&#10;• ¿Qué equipos están afectados?&#10;• ¿Has intentado algo para solucionarlo?"></textarea>
+        <textarea class="form-textarea" id="f-desc" maxlength="2000" placeholder="Describe con detalle el problema:&#10;• ¿Qué estabas haciendo cuando ocurrió?&#10;• ¿Cuándo comenzó el problema?&#10;• ¿Qué equipos están afectados?&#10;• ¿Has intentado algo para solucionarlo?"></textarea>
       </div>
       <div class="form-group">
         <label class="form-label">Prioridad <span>*</span></label>
@@ -190,8 +190,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;ba
           style="white-space:nowrap;padding:10px 16px;background:var(--navy-l);border:1.5px solid var(--navy);border-radius:var(--r-md);color:var(--navy-d);font-size:13px;font-weight:700;cursor:pointer;">
           Adjuntar foto
         </button>
-        <div id="fotos-limite-note" style="display:none;font-size:11px;color:var(--text3);margin-top:6px;">Ya adjuntaste el máximo de 5 fotos.</div>
-        <div style="font-size:11px;color:var(--text3);margin-top:4px;">Puedes adjuntar hasta 5 fotos desde tu camara o galeria. Maximo 10MB cada una. Formatos: JPG, PNG, GIF.</div>
+        <div id="fotos-limite-note" style="display:none;font-size:11px;color:var(--text3);margin-top:6px;">Ya adjuntaste el máximo de 3 fotos.</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px;">Puedes adjuntar hasta 3 fotos desde tu camara o galeria. Maximo 10MB cada una. Formatos: JPG, PNG, GIF.</div>
         <div style="font-size:11px;color:var(--text2,#555);margin-top:4px;">📷 Fotografía solo el equipo o el problema. <strong>No incluyas personas</strong> (especialmente estudiantes) ni documentos con datos personales.</div>
       </div>
       <!-- Ley 81 de 2019: consentimiento previo, informado e inequívoco -->
@@ -220,6 +220,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;ba
     <div class="success-sub">Tu reporte ha sido registrado en el sistema SAGAE. El equipo técnico ha recibido una notificación y atenderá tu solicitud lo antes posible.</div>
     <div class="success-code" id="success-code">TKT-0000</div>
     <div class="success-info" id="success-info"></div>
+    <div id="success-fotos-aviso" role="status" style="display:none;font-size:13px;color:var(--navy-d);background:var(--navy-l);border-radius:8px;padding:10px 12px;margin:10px 0;"></div>
     <button class="btn-nuevo" onclick="nuevoReporte()">+ Reportar otro problema</button>
   </div>
 </div>
@@ -430,6 +431,8 @@ function showError(msg){const el=document.getElementById("msg-error");el.textCon
 function hideError(){document.getElementById("msg-error").classList.remove("show");}
 // NOTA: el código del ticket ahora lo genera el servidor (crear_ticket_publico)
 // — ya no se necesita contar tickets ni generar un código provisional aquí.
+const MAX_FOTOS_PORTAL = 3;
+const UMBRAL_COMPRESION = 2 * 1024 * 1024;
 let _fotosPortalActuales = [];
 
 function _renderGaleriaFotosPortal(){
@@ -443,8 +446,8 @@ function _renderGaleriaFotosPortal(){
       <button type="button" onclick="quitarFotoPortal(${i})" style="background:none;border:none;color:var(--navy-d);cursor:pointer;font-size:14px;">🗑</button>
     </div>`).join('') : '';
   list.innerHTML = sanitizeHTML(fotosHTML);
-  document.getElementById('fotos-limite-note').style.display = _fotosPortalActuales.length>=5 ? 'block' : 'none';
-  document.getElementById('btn-foto').style.display = _fotosPortalActuales.length>=5 ? 'none' : '';
+  document.getElementById('fotos-limite-note').style.display = _fotosPortalActuales.length>=MAX_FOTOS_PORTAL ? 'block' : 'none';
+  document.getElementById('btn-foto').style.display = _fotosPortalActuales.length>=MAX_FOTOS_PORTAL ? 'none' : '';
 }
 
 function quitarFotoPortal(index){
@@ -452,8 +455,30 @@ function quitarFotoPortal(index){
   _renderGaleriaFotosPortal();
 }
 
+// Lee el archivo; si pesa más de 2 MB lo reduce a JPEG (~1600 px, calidad 0,8).
+async function _prepararFotoPortal(file){
+  const leer = blob => new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>rej(new Error('lectura')); r.readAsDataURL(blob); });
+  if(file.size <= UMBRAL_COMPRESION){
+    const full = await leer(file);
+    return {base64:full.split(',')[1], mimeType:file.type||'image/jpeg', nombreArchivo:file.name||'foto.jpg'};
+  }
+  const url = URL.createObjectURL(file);
+  try{
+    const img = await new Promise((res,rej)=>{ const im=new Image(); im.onload=()=>res(im); im.onerror=()=>rej(new Error('imagen')); im.src=url; });
+    const k = Math.min(1, 1600/Math.max(img.naturalWidth||1, img.naturalHeight||1));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(img.naturalWidth*k));
+    c.height = Math.max(1, Math.round(img.naturalHeight*k));
+    c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+    const full = c.toDataURL('image/jpeg',0.8);
+    const nombre = (file.name||'foto').replace(/\.[^.]+$/,'')+'.jpg';
+    return {base64:full.split(',')[1], mimeType:'image/jpeg', nombreArchivo:nombre};
+  } finally { URL.revokeObjectURL(url); }
+}
+
+// La foto se prepara aquí pero se SUBE después de crear el ticket (con el uploadToken).
 function subirFotoPortal(){
-  if(_fotosPortalActuales.length >= 5){ showError('Ya adjuntaste el máximo de 5 fotos.'); return; }
+  if(_fotosPortalActuales.length >= MAX_FOTOS_PORTAL){ showError('Ya adjuntaste el máximo de '+MAX_FOTOS_PORTAL+' fotos.'); return; }
   const input = document.createElement('input');
   input.type   = 'file';
   input.accept = 'image/*';
@@ -464,28 +489,32 @@ function subirFotoPortal(){
     const file = input.files[0];
     document.body.removeChild(input);
     if(!file) return;
+    if(_fotosPortalActuales.length >= MAX_FOTOS_PORTAL){ showError('Ya adjuntaste el máximo de '+MAX_FOTOS_PORTAL+' fotos.'); return; }
     if(file.size > 10 * 1024 * 1024){ showError('La foto no puede superar 10MB.'); return; }
     const btn = document.getElementById('btn-foto');
-    if(btn){ btn.disabled=true; btn.textContent='Subiendo...'; }
+    if(btn){ btn.disabled=true; btn.textContent='Preparando...'; }
     try {
-      const base64full = await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>rej(new Error('Error')); r.readAsDataURL(file); });
-      const base64data = base64full.split(',')[1];
-      // Antes esto leía la respuesta de un POST directo — no funciona en
-      // Apps Script. Usamos el patrón POST-ciego + GET-resultado.
-      const data = await apiPostAsync(null,'uploadFoto',{
-        base64:base64data, mimeType:file.type, nombreArchivo:file.name,
-        modulo:'Tickets', codigoRegistro:'', origen:'portal', deviceId:_obtenerDeviceId()
-      }, 25000);
-      if(data && data.url){
-        const nota = prompt('Nota corta para esta foto (opcional):','') || '';
-        _fotosPortalActuales.push({url:data.url, nota:nota.trim().slice(0,200)});
-        _renderGaleriaFotosPortal();
-      } else { showError('No se pudo subir la foto: '+(data?.error||'sin respuesta')); }
-    } catch(e){ showError('Error al subir la foto: '+e.message); }
+      const foto = await _prepararFotoPortal(file);
+      const nota = prompt('Nota corta para esta foto (opcional):','') || '';
+      foto.nota = nota.trim().slice(0,200);
+      _fotosPortalActuales.push(foto);
+      _renderGaleriaFotosPortal();
+    } catch(e){ showError('No se pudo preparar la foto. Prueba con otra imagen.'); }
     finally { if(btn){ btn.disabled=false; btn.textContent='Adjuntar foto'; } }
   };
   input.click();
 }
+
+// Mensajes en español para los errores de envío (siempre se muestran con textContent).
+function _mensajeErrorPortal(data){
+  const c = data && data.error;
+  if(c==='UPLOAD_TOKEN_INVALIDO') return 'la autorización para adjuntar fotos venció';
+  if(c==='CUPO_DIARIO') return 'se alcanzó el límite diario de fotos';
+  if(c==='RATE_LIMIT_GLOBAL') return 'el sistema está recibiendo muchos reportes en este momento; intenta de nuevo en unos minutos';
+  if(c==='TIMEOUT') return 'el servidor tardó demasiado en responder';
+  return (data && data.message) ? String(data.message).slice(0,200) : 'no se pudo completar la operación';
+}
+function _esCorreoUnico(c){ return /^[^\s@,;<>()]+@[^\s@,;<>()]+\.[^\s@,;<>()]+$/.test(c) && c.length<=120; }
 
 // ── PRIVACIDAD (Ley 81 de 2019) ─────────────────────────────────
 // Versión del aviso que acepta quien reporta; queda registrada en el
@@ -517,13 +546,14 @@ async function enviarReporte(){
   const prior=prioridad;
   if(!anonimo){
     if(!nombre){showError("Por favor escribe tu nombre completo, o marca “Reportar de forma anónima”.");return;}
-    if(!correo||!correo.includes("@")){showError("Por favor escribe un correo electrónico válido, o marca “Reportar de forma anónima”.");return;}
+    if(!_esCorreoUnico(correo)){showError("Por favor escribe un correo electrónico válido, o marca “Reportar de forma anónima”.");return;}
     if(!document.getElementById("f-mayor").checked){showError("Confirma que eres mayor de edad. Si eres menor de edad, marca “Reportar de forma anónima”.");return;}
   }
   if(!document.getElementById("f-acepto").checked){showError("Para enviar el reporte debes leer y aceptar el Aviso de Privacidad.");return;}
   if(!depto){showError("Por favor indica tu departamento o área.");return;}
   if(!tipo){showError("Por favor selecciona el tipo de solicitud.");return;}
   if(!titulo){showError("Por favor escribe un título para el problema.");return;}
+  if(_fotosPortalActuales.length>MAX_FOTOS_PORTAL){showError("Solo puedes adjuntar hasta "+MAX_FOTOS_PORTAL+" fotos.");return;}
   if(desc.length<20){showError("Por favor describe el problema con más detalle (mínimo 20 caracteres).");return;}
   const limitError=checkReportLimit();
   if(limitError){showError(limitError);return;}
@@ -547,10 +577,9 @@ async function enviarReporte(){
     const ticket={
       titulo,activoId:"",activoNombre:"—",
       tipo,prior,
-      desc:`${desc}\n\n--- Reportado por: ${nombre} (${anonimo ? "sin correo" : correo}) | Ubicación: ${ubicacion} | Departamento: ${depto} ---`,
-      fotos: _fotosPortalActuales,
+      desc:`${desc}\n\n--- Ubicación: ${ubicacion} | Departamento: ${depto} ---`,
       reportadoPor:nombre, correoReportador:correo,
-      deviceId:_obtenerDeviceId(),
+      deviceId: anonimo ? ("anon_"+_aleatorioHex(8)) : _obtenerDeviceId(),
       website:(document.getElementById("f-website")||{}).value||"",
       recaptchaToken: await _tokenRecaptcha(),
       anonimo: anonimo,
@@ -565,10 +594,28 @@ async function enviarReporte(){
     if(!data || data.ok!==true){
       window._enviandoPortal = false;
       btn.disabled=false;spinner.style.display="none";btnText.textContent="Enviar reporte";
-      showError(data && data.message ? data.message : "No se pudo enviar el reporte. Intenta de nuevo en unos minutos.");
+      window._lastSubmitClick = 0;
+      showError(data && data.error==="RATE_LIMIT_GLOBAL" ? "El sistema está recibiendo muchos reportes en este momento. Intenta de nuevo en unos minutos."
+        : (data && data.message ? data.message : "No se pudo enviar el reporte. Intenta de nuevo en unos minutos."));
       return;
     }
     const codigo = data.codigo;
+    // El ticket ya existe: ahora se suben las fotos (máx. 3) con el token, una sola vez cada una.
+    const fotosFallidas = [];
+    const fotosAEnviar = _fotosPortalActuales.slice(0,MAX_FOTOS_PORTAL);
+    if(fotosAEnviar.length){
+      btnText.textContent="Subiendo fotos...";
+      for(const f of fotosAEnviar){
+        try{
+          const r = await apiPostAsync(null,"uploadFoto",{
+            origen:"portal", uploadToken:data.uploadToken, codigoTicket:codigo,
+            base64:f.base64, mimeType:f.mimeType, nombreArchivo:f.nombreArchivo,
+            modulo:"Tickets", deviceId:ticket.deviceId
+          },45000);
+          if(!r || r.ok!==true) fotosFallidas.push(r||{});
+        }catch(e){ fotosFallidas.push({}); }
+      }
+    }
     const insertOk = true;
     // Ocultar form ANTES de liberar el flag para evitar que un clic rápido lo reactive
     document.getElementById("form-card").style.display="none";
@@ -582,6 +629,13 @@ async function enviarReporte(){
       <div class="success-info-item"><span class="success-info-label">Prioridad</span><span class="success-info-value">${_escHtml(prior.charAt(0).toUpperCase()+prior.slice(1))}</span></div>
       <div class="success-info-item"><span class="success-info-label">Área</span><span class="success-info-value">${_escHtml(depto)}</span></div>
       <div class="success-info-item"><span class="success-info-label">Estado</span><span class="success-info-value">✅ Enviado al equipo técnico</span></div>`);
+    const aviso = document.getElementById("success-fotos-aviso");
+    if(aviso){
+      if(fotosFallidas.length){
+        aviso.textContent="Tu reporte se envió (código "+codigo+"), pero no se pudo adjuntar "+fotosFallidas.length+" foto(s): "+_mensajeErrorPortal(fotosFallidas[0])+".";
+        aviso.style.display="block";
+      } else { aviso.textContent=""; aviso.style.display="none"; }
+    }
     window.scrollTo({top:0,behavior:"smooth"});
   }catch(e){
     window._enviandoPortal = false;
