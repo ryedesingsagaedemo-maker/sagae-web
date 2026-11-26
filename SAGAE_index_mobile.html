@@ -2816,7 +2816,7 @@ async function saveTicket(){
 function _marcarErrorGuardadoMob(o, res, quien){
   delete o._guardando; o._errGuardado = true;
   if(typeof renderTickets==='function') { renderTickets(); renderDashboard(); renderActivos(); }
-  showToast('⚠ No se guardó '+quien+': '+_msgServidor(res,'sin respuesta')+'. Toca «Reintentar» en la tarjeta.','error',5000);
+  showToast('⚠ No se guardó '+quien+': '+String(_msgServidor(res,'sin respuesta')).replace(/[.\s]+$/,'')+'. Toca «Reintentar» en la tarjeta.','error',5000);
 }
 /* Segundo plano: envía el ticket (alta o edición) y muestra el resultado real. */
 async function _enviarTicketMob(codigo){

@@ -81,7 +81,7 @@
       "archivos": [
         "SAGAE_index_mobile.html"
       ],
-      "proposito": "Copia de tickets y equipos para trabajar con mala conexión",
+      "proposito": "Copia reducida de tickets y equipos para trabajar con mala conexión (historial recortado a los eventos más recientes y sin fotos de los eventos; el historial completo se pide al abrir el ticket)",
       "plazo": "Se borra al cerrar sesión o vencer la sesión; máximo 7 días",
       "mencionEnAviso": "sagae_mobile_cache"
     }
