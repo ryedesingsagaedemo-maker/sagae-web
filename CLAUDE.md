@@ -15,3 +15,8 @@ legales, plan de tareas, informes de seguridad, estado interno) vive en el repos
 - `index.html`, `SAGAE_index_mobile.html` y `sw.js` usan saltos de línea CRLF: conservarlos (revisar `git diff --stat`).
 - Dominio: `sagae.ryedesign.app` (archivo `CNAME`).
 - Idioma: español. El titular es hombre: usar masculino.
+
+## Documentación obligatoria (titular, 26 nov 2026)
+- Ningún cambio sin su documentación. Antes de cada commit: `node tools/verificar-documentacion.js` (debe decir OK); corre solo en GitHub Actions en cada push.
+- Si cambia el texto de `aviso-privacidad.html` o `terminos-de-uso.html`: subir su versión (meta + texto visible + `privacidad/inventario-datos.json` + `AVISO_PRIVACIDAD_VERSION` del portal) y registrar la huella con `--registrar`.
+- La forma de trabajo completa, el estado y la memoria del proyecto están en el repositorio privado (`CLAUDE.md` y `docs/coordinacion/ESTADO-SAGAE.md`).
