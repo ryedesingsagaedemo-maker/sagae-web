@@ -1448,6 +1448,12 @@ function _fvIgual(a,b){
   if((a==='' && _fvNum(b)===0) || (b==='' && _fvNum(a)===0)) return true;
   return false;
 }
+// «S/N», «N/A», «—», «0»… equivalen a "sin serie": no cuentan para la unicidad
+function _fvVacioEq(r, v){
+  if(!r || !Array.isArray(r.vaciosEquivalentes)) return false;
+  const n=s=>String(s==null?'':s).toUpperCase().replace(/\s+/g,'');
+  return r.vaciosEquivalentes.some(x=>n(x)===n(v));
+}
 function _fvEsFecha(s){
   const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s); if(!m) return false;
   const d=new Date(Date.UTC(+m[1],+m[2]-1,+m[3]));
@@ -1485,13 +1491,13 @@ function _fvCampo(hoja, campo, r, reg){
     if(r.gteCampo){ const o=_fvNorm(reg[r.gteCampo]); if(_fvEsFecha(o) && v<o) return r.msgCruce||msg('No puede ser anterior a '+r.gteCampo+'.'); }
     if(r.lteCampo){ const o=_fvNorm(reg[r.lteCampo]); if(_fvEsFecha(o) && v>o) return r.msgCruce||msg('No puede ser posterior a '+r.lteCampo+'.'); }
   }else if(t==='correo'){
-    if(!/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]{2,}$/.test(v) || (r.max!=null && v.length>r.max)) return msg('Correo no válido.');
+    if(!/^[A-Za-z0-9._%+-]+@[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$/.test(v) || v.length>(r.max||120)) return 'Correo no válido (sin acentos ni espacios).';
   }else if(t==='telefono'){
     if(v.length<7 || v.length>20 || !/^[0-9+\-() ]+$/.test(v)) return msg('Teléfono no válido (7 a 20 caracteres: números, + - ( ) y espacios).');
   }
   if(r.patron){ let ok=true; try{ ok=new RegExp(r.patron).test(v); }catch(e){} if(!ok) return msg('Formato no válido.'); }
   if(r.valores && Array.isArray(r.valores) && !r.valores.includes(v)) return msg('Valor no permitido.');
-  if(r.unico){
+  if(r.unico && !_fvVacioEq(r, v)){
     const norm=s=>{ s=_fvNorm(s); return r.normal==='sinEspaciosMinusculas' ? s.replace(/\s+/g,'').toLowerCase() : s.toLowerCase(); };
     const mio = hoja==='usuarios' ? '' : _fvNorm(reg.codigo);
     const dup=_fvLista(hoja).find(x=>x && (x.estado!=='eliminado' || r.unicoConEliminados) && (hoja==='usuarios' || !mio || x.codigo!==mio) && norm(x[campo])===norm(v));
@@ -1620,6 +1626,26 @@ function fvLimpiar(clave){
 function _fvTextoCampos(campos){
   return Object.keys(campos||{}).map(k=>k+': '+campos[k]).join('; ');
 }
+
+// Valor viejo fuera de la lista (p. ej. prioridad 'alta'): se ofrece «(anterior) alta» ya elegido; el validador lo acepta mientras no cambie
+function fvPrepararSelects(clave){
+  const cfg=_FV[clave]; if(!cfg || !cfg.anterior) return;
+  const ant=cfg.anterior(); if(!ant) return;
+  ['tipo','estado','prior','condicion'].forEach(c=>{
+    const el=cfg.campos[c] && document.getElementById(cfg.campos[c]);
+    if(!el || el.tagName!=='SELECT') return;
+    [...el.options].filter(o=>o.dataset.ant).forEach(o=>o.remove());
+    const v=_fvNorm(ant[c]);
+    if(v==='' || [...el.options].some(o=>o.value===v)) return;
+    const o=document.createElement('option'); o.value=v; o.textContent='(anterior) '+v; o.dataset.ant='1';
+    el.appendChild(o); el.value=v;
+  });
+}
+let _fvObsT=null;
+new MutationObserver(()=>{
+  clearTimeout(_fvObsT);
+  _fvObsT=setTimeout(()=>{ try{ Object.keys(_FV).forEach(k=>{ if(_FV[k].abierto && _FV[k].abierto()) fvPrepararSelects(k); }); }catch(e){} },150);
+}).observe(document.documentElement,{attributes:true,attributeFilter:['class'],subtree:true});
 
 // ── Eventos delegados: al salir del campo, al escribir, números sin signo, serie en vivo ──
 let _fvTimer = null;
@@ -4094,7 +4120,7 @@ async function guardarNuevoActivoMobile(){
   {
     const _ser = (document.getElementById('mob-ea-serial')?.value||'').trim().toUpperCase();
     const _cambio = !existente || String(existente.serial||'').trim().toUpperCase() !== _ser;
-    if(_ser && _ser!=='—' && _cambio){
+    if(_ser && _ser!=='—' && _cambio && !_fvVacioEq((_ESQUEMAS&&_ESQUEMAS.activos||{}).serial,_ser)){
       const _dup = activos.find(x=>x.codigo!==editCodigo && x.estado!=='eliminado' && String(x.serial||'').trim().toUpperCase()===_ser);
       if(_dup){ showMobToast('El serial "'+_ser+'" ya está registrado en '+_dup.codigo+' ('+_dup.nombre+')'); return; }
     }
