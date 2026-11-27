@@ -2711,6 +2711,10 @@ function _r3Combinar(e){
     if(k.charAt(0)==='_' || _R3_NO_CAMPO.includes(k)) return;
     if(!mios.includes(k)) m[k] = act[k];
   });
+  // historial e instalaciones: UNIÓN de lo del servidor y lo propio (nunca la copia local sola)
+  ['historial','instalaciones'].forEach(k=>{
+    if(k in payload && act[k]!==undefined){ const u=_r3UnirHist(act[k], payload[k]); m[k]=(typeof payload[k]==='string')?JSON.stringify(u):u; }
+  });
   m._version = act._version; delete m.actualizado;
   return {payload:m, mios, otros};
 }
@@ -2749,9 +2753,32 @@ async function resolverConflicto(key){
     +'<button class="btn btn-p" id="cf-guardar" onclick="_r3ConflictoGuardar(\''+_jsArg(key)+'\')">Guardar mis cambios sobre la versión nueva</button></div></div>';
   bg.classList.add('open');
 }
+const _R3_RENDER_FORM = {licencias:'renderLicencias', personas:'renderPersonas', espacios:'renderEspacios', departamentos:'renderDepartamentos'};
+function _r3RenderForm(h){ try{ if(_R3_RENDER_FORM[h]) window[_R3_RENDER_FORM[h]](); buildDataLists(); }catch(e){} }
+// Conflicto de un formulario de personas, espacios, departamentos o licencias (se guarda con _guardarConfirmado)
+function _r3AbrirConflictoForm(h, obj, res){
+  const reg = _r3Buscar(h, obj) || obj, key = 'form-'+h+'-'+obj.codigo;
+  _pend.set(key, {key, hoja:h, registro:reg, registros:[reg], op:{vistas:[], base:_r3BaseAbierta(h,obj.codigo,null), formulario:true},
+    estado:'conflicto', payload:{...obj}, opId:null,
+    conflicto:{actual:(res.actual&&typeof res.actual==='object')?res.actual:null, campos:Array.isArray(res.campos)?res.campos:[]}});
+  resolverConflicto(key);
+}
 function _r3ConflictoGuardar(key){
   const e = _pend.get(key); if(!e || e.estado!=='conflicto' || !e.conflicto || !e.conflicto.actual) return;
   const c = _r3Combinar(e), act = e.conflicto.actual, reg = e.registro;
+  if(e.op.formulario){
+    _pend.delete(key);
+    (async()=>{
+      try{
+        await _guardarConfirmado(e.hoja, 'update', c.payload); // lleva la _version del servidor: si hay otro cambio, otra ventana
+        const mem = _r3Norm(e.hoja, c.payload);
+        Object.keys(mem).forEach(k=>{ if(k.charAt(0)==='_' && k!=='_version') return; reg[k]=mem[k]; });
+        closeModals(); _r3RenderForm(e.hoja);
+        showToast('✅ Tus cambios se guardaron sobre la versión nueva','success');
+      }catch(err){ if(!err.conflicto) showToast('Error: '+err.message,''); }
+    })();
+    return;
+  }
   e.payload = c.payload; e.opId = _generarOpId(); e.conflicto = null;
   // lo que se ve en pantalla: la versión nueva con los cambios de la persona encima y los historiales unidos
   const mem = _r3Norm(e.hoja, {...c.payload, historial:_r3UnirHist(act.historial, c.payload.historial)});
@@ -2771,16 +2798,15 @@ function _r3ConflictoDescartar(key){
     if(e.hoja==='activos' && activoActual && activoActual.codigo===n.codigo) activoActual = n;
   }
   closeModals(); _pendBarra(); renderSolo(e.op.vistas);
+  if(e.op.formulario){ _r3Cerrar(e.hoja, e.registro.codigo); _r3RenderForm(e.hoja); }
   showToast('Se descartaron tus cambios: queda la versión de la otra persona.','');
 }
 
-// Antes de enviar: nunca se manda `actualizado` (lo escribe el servidor) y un update sin `_version` toma la del registro en memoria
+// Antes de enviar: nunca se manda `actualizado` (lo escribe el servidor). La `_version` NO se rellena desde la lista:
+// en un formulario es la de cuando se abrió (si no, un conflicto resuelto a medias pisaría lo de la otra persona);
+// las acciones automáticas (_r3Update) usan la del registro en memoria porque se arman con él.
 function _r3PrepararEnvio(sheet, action, secure, original){
   delete secure.actualizado;
-  if(action==='update' && secure._version===undefined && _R3_HOJAS.includes(sheet)){
-    const r = _r3Buscar(sheet, secure);
-    if(r && r._version!=null) secure._version = r._version;
-  }
 }
 // Respuesta de un insert/update confirmado: la versión nueva queda en el registro en memoria
 function _r3AplicarRespuesta(sheet, action, original, res){
@@ -4770,7 +4796,7 @@ async function _devolverEquipoAlCerrarTicket(t, estadoAntes, datosDev){
     devueltoANombre:retira, condicion:cond, asignadoA:act.asignado||'—', ticket:t.codigo,
     fecha:ts(), usuario:session.nombre, color:'green'
   }];
-  const res = await apiPostAsync('activos','update',act,60000);
+  const res = await _r3Update('activos',act,['estado']); // R3: lleva la versión leída y reaplica si hubo conflicto
   if(!res || res.ok===false){
     act.estado = estadoPrevio; act.historial = histPrevio;
     return {error:true};
@@ -5268,7 +5294,7 @@ function _reabrirPorValidacion(e, auto){
 }
 
 // Con envíos sin confirmar, avisar antes de cerrar la pestaña
-window.addEventListener('beforeunload', ev=>{ if(_pend.size){ ev.preventDefault(); ev.returnValue=''; } });
+window.addEventListener('beforeunload', ev=>{ if([..._pend.values()].some(e=>!(e.op&&e.op.formulario))){ ev.preventDefault(); ev.returnValue=''; } });
 
 // Botón Guardar: deshabilitado e indicador desde el primer clic; se libera al cerrarse la ventana
 function _btnGuardando(btn){
@@ -5456,6 +5482,8 @@ function saveTicket(){
         alConfirmar: async(res)=>{
           // Adoptar el código REAL asignado por el servidor
           const codigoReal = (res && res.codigo) ? res.codigo : code;
+          // R3: si un sondeo incremental ya trajo el ticket con su código real, se quita la copia duplicada
+          tickets = tickets.filter(x=>x===t || x.codigo!==codigoReal);
           t.codigo = codigoReal; t.id = codigoReal;
           if(res && res.duplicadoEvitado) showToast('ℹ Este ticket ya se había registrado como '+codigoReal+'. No se creó un duplicado.','');
           else showToast('✅ Ticket '+codigoReal+' creado correctamente','success');
@@ -8804,11 +8832,19 @@ function _impMotivo(res){
 // de siempre (apiPost); con conexión espera la respuesta y, si el servidor rechaza el
 // registro, lanza un Error con su mensaje para que el formulario no diga "guardado".
 async function _guardarConfirmado(sheet, action, obj){
+  // R3: un formulario de edición manda la versión de cuando se abrió (_r3Abrir), no la que haya ahora en la lista
+  const ab = (action==='update' && obj && obj.codigo && _R3_HOJAS.includes(sheet)) ? _r3Abierto[sheet+':'+obj.codigo] : null;
+  if(ab && obj._version===undefined && ab.version!==undefined) obj._version = ab.version;
   if(!_isOnline) return apiPost(sheet, action, obj);
   const res = await apiPostAsync(sheet, action, obj);
   if(res && res.error==='VALIDACION' && fvServidorPorHoja(sheet, res.campos)) throw new Error(_MSG_ERR_SERVIDOR.VALIDACION);
-  if(res && res.error==='CONFLICTO') _r3AplicarActual(sheet, res.actual); // R3: queda en pantalla la versión nueva del servidor
+  if(res && res.error==='CONFLICTO'){
+    // R3: se abre la ventana de conflicto (guardar mis cambios sobre la versión nueva / descartar); la lista no se toca
+    _r3AbrirConflictoForm(sheet, obj, res);
+    const er = new Error(_MSG_ERR_SERVIDOR.CONFLICTO); er.conflicto = true; throw er;
+  }
   if(!res || !res.ok) throw new Error(_impMotivo(res));
+  if(ab) _r3Cerrar(sheet, obj.codigo);
   return res;
 }
 
@@ -10908,6 +10944,7 @@ function renderLicencias(){
 // ── ABRIR MODAL DE PAQUETE ──────────────────────────────────────
 function openLicencia(codigo){
   const isEdit = !!codigo;
+  if(isEdit) _r3Abrir('licencias',codigo);
   document.getElementById('mod-licencia-title').textContent = isEdit ? 'Editar paquete de licencia' : 'Nuevo paquete de licencia';
   const l = isEdit ? licencias.find(x=>x.codigo===codigo) : {};
   document.getElementById('lic-nombre').value    = l.nombre||'';
@@ -11459,6 +11496,7 @@ function renderPersonas(){
 function openPersona(codigo){
   buildDataLists();
   const isEdit = !!codigo;
+  if(isEdit) _r3Abrir('personas',codigo);
   document.getElementById('mod-persona-title').textContent = isEdit ? 'Editar persona' : 'Nueva persona';
   const p = isEdit ? personas.find(x=>x.codigo===codigo) : {};
   document.getElementById('per-nombre').value   = p.nombre||'';
@@ -11640,6 +11678,7 @@ function renderEspacios(){
 function openEspacio(codigo){
   buildDataLists();
   const isEdit = !!codigo;
+  if(isEdit) _r3Abrir('espacios',codigo);
   document.getElementById('mod-espacio-title').textContent = isEdit ? 'Editar espacio' : 'Nuevo espacio';
   const e = isEdit ? espacios.find(x=>x.codigo===codigo) : {};
   document.getElementById('esp-nombre').value    = e.nombre||'';
@@ -11793,6 +11832,7 @@ function renderDepartamentos(){
 function openDepartamento(codigo){
   buildDataLists();
   const isEdit = !!codigo;
+  if(isEdit) _r3Abrir('departamentos',codigo);
   document.getElementById('mod-dep-title').textContent = isEdit ? 'Editar departamento' : 'Nuevo departamento';
   const d = isEdit ? departamentos.find(x=>x.codigo===codigo) : {};
   document.getElementById('dep-nombre').value = d.nombre||'';

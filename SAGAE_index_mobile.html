@@ -1411,11 +1411,8 @@ function _r3AplicarActual(h, actual){
   if(i>=0) l[i]=n; else l.push(n);
 }
 function _r3PrepararEnvio(sheet, action, secure){
+  /* `actualizado` lo escribe el servidor; la `_version` NO se rellena desde la lista (la de un guardado es la leída al abrir) */
   delete secure.actualizado;
-  if(action==='update' && secure._version===undefined && _R3_HOJAS.includes(sheet)){
-    const r = _r3Buscar(sheet, secure);
-    if(r && r._version!=null) secure._version = r._version;
-  }
 }
 function _r3AplicarRespuesta(sheet, action, original, res){
   if(!res || res.ok!==true || !_R3_HOJAS.includes(sheet) || (action!=='update' && action!=='insert')) return;
