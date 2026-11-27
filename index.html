@@ -2700,6 +2700,21 @@ function _r3UnirHist(a, b){
   const ya=parseHist(a), vistos=new Set(ya.map(x=>JSON.stringify(x)));
   return ya.concat(parseHist(b).filter(x=>!vistos.has(JSON.stringify(x))));
 }
+// Instalaciones de una licencia: las del servidor + lo que esta persona añadió − lo que quitó (contra la base que leyó;
+// sin base, contra la intención de la acción: {agregar:[…], quitar:[códigos de activo]}). Sin ninguna de las dos: null.
+function _r3InstalacionesMias(act, payload, base, intencion){
+  const clave = i=>String(i && i.activoCodigo!=null ? i.activoCodigo : JSON.stringify(i));
+  let agrega=[], quita=new Set();
+  if(base && base.instalaciones!==undefined){
+    const b=parseHist(base.instalaciones), p=parseHist(payload.instalaciones), bk=new Set(b.map(clave)), pk=new Set(p.map(clave));
+    agrega=p.filter(i=>!bk.has(clave(i))); b.forEach(i=>{ if(!pk.has(clave(i))) quita.add(clave(i)); });
+  }else if(intencion){
+    agrega=(intencion.agregar||[]).slice(); (intencion.quitar||[]).forEach(c=>quita.add(String(c)));
+  }else return null;
+  const lista=parseHist(act.instalaciones).filter(i=>!quita.has(clave(i))), ya=new Set(lista.map(clave));
+  agrega.forEach(i=>{ if(!ya.has(clave(i))){ lista.push(i); ya.add(clave(i)); } });
+  return {lista, agrega, quita:[...quita]};
+}
 // Cambios de la persona (contra lo que leyó) sobre la versión actual del servidor
 function _r3Combinar(e){
   const act = e.conflicto.actual, payload = e.payload || _limpiarReg(e.registro);
@@ -2711,10 +2726,15 @@ function _r3Combinar(e){
     if(k.charAt(0)==='_' || _R3_NO_CAMPO.includes(k)) return;
     if(!mios.includes(k)) m[k] = act[k];
   });
-  // historial e instalaciones: UNIÓN de lo del servidor y lo propio (nunca la copia local sola)
-  ['historial','instalaciones'].forEach(k=>{
-    if(k in payload && act[k]!==undefined){ const u=_r3UnirHist(act[k], payload[k]); m[k]=(typeof payload[k]==='string')?JSON.stringify(u):u; }
-  });
+  // historial: UNIÓN de lo del servidor y lo propio (nunca la copia local sola)
+  if('historial' in payload && act.historial!==undefined){ const u=_r3UnirHist(act.historial, payload.historial); m.historial=(typeof payload.historial==='string')?JSON.stringify(u):u; }
+  // instalaciones (licencias): sobre las del servidor solo MI diferencia: lo que añadí se agrega y lo que quité se quita
+  if('instalaciones' in payload && act.instalaciones!==undefined){
+    const r = _r3InstalacionesMias(act, payload, base, e.op && e.op.intencion);
+    const lista = r ? r.lista : parseHist(act.instalaciones);
+    m.instalaciones = (typeof payload.instalaciones==='string') ? JSON.stringify(lista) : lista;
+    if(r && (r.agrega.length||r.quita.length) && !mios.includes('instalaciones')) mios.push('instalaciones');
+  }
   m._version = act._version; delete m.actualizado;
   return {payload:m, mios, otros};
 }
@@ -2728,7 +2748,13 @@ async function resolverConflicto(key){
   const e = _pend.get(key); if(!e || e.estado!=='conflicto') return;
   if(!e.conflicto || !e.conflicto.actual){
     const act = await _r3TraerActual(e.hoja, e.registro.codigo);
-    if(!act){ showToast('No se pudo traer la versión actual del servidor. Intenta de nuevo.','error'); return; }
+    if(!act){
+      // sin la versión actual no hay nada que comparar: se avisa y se recarga la hoja (un formulario o acción queda descartado)
+      showToast('Recarga para ver la versión actual: no se pudo traer el registro del servidor.','error');
+      if(e.op.formulario){ _pend.delete(key); e.registros.forEach(r=>{ delete r._estadoGuardado; delete r._pendKey; }); _r3Cerrar(e.hoja, e.registro.codigo); closeModals(); }
+      await _r3RecargarHoja(e.hoja);
+      return;
+    }
     e.conflicto = {actual:act, campos:(e.conflicto&&e.conflicto.campos)||[]};
   }
   const c = _r3Combinar(e), act = e.conflicto.actual;
@@ -2742,7 +2768,7 @@ async function resolverConflicto(key){
       +'<td style="padding:5px 8px">'+(c.mios.includes(k)?_escHtml(_r3TxtValor((e.payload||e.registro)[k])):'<span style="color:var(--text3)">(no lo cambiaste)</span>')+'</td></tr>';
   }).join('');
   bg.innerHTML = '<div class="modal" style="max-width:680px;" role="dialog" aria-label="Conflicto de edición">'
-    +'<div class="modal-title"><span>⚠ Otra persona modificó este registro</span><button class="modal-close" onclick="closeModals()">✕</button></div>'
+    +'<div class="modal-title"><span>⚠ Otra persona modificó este registro</span><button class="modal-close" onclick="_r3ConflictoCerrar(\''+_jsArg(key)+'\')">✕</button></div>'
     +'<p style="font-size:12px;margin:0 0 8px">Mientras editabas <b>'+_escHtml(e.registro.codigo||'')+'</b> otra persona guardó cambios. Abajo está el registro actual del servidor y, a la derecha, tus cambios. '
     +'Los campos en amarillo son los que la otra persona cambió.</p>'
     +'<div style="max-height:46vh;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="text-align:left;border-bottom:1px solid var(--border,#ddd)"><th style="padding:5px 8px">Campo</th><th style="padding:5px 8px">Versión actual (servidor)</th><th style="padding:5px 8px">Tus cambios</th></tr></thead><tbody>'
@@ -2753,29 +2779,51 @@ async function resolverConflicto(key){
     +'<button class="btn btn-p" id="cf-guardar" onclick="_r3ConflictoGuardar(\''+_jsArg(key)+'\')">Guardar mis cambios sobre la versión nueva</button></div></div>';
   bg.classList.add('open');
 }
+// ✕ en la ventana: en un formulario o acción (que no tiene fila para volver a abrirla) equivale a «Descartar mis cambios»
+function _r3ConflictoCerrar(key){
+  const e=_pend.get(key);
+  if(e && e.op && e.op.formulario) _r3ConflictoDescartar(key); else closeModals();
+}
+// Recarga completa de una hoja (conserva las filas con envío pendiente)
+async function _r3RecargarHoja(h){
+  const raw = await apiGet(h);
+  if(!Array.isArray(raw) || raw._failed) return false;
+  const n = raw.map(r=>_r3Norm(h,r));
+  if(h==='tickets') tickets=n; else if(h==='activos') activos=n; else if(h==='mobiliario') mobiliario=n;
+  else if(h==='licencias') licencias=n; else if(h==='personas') personas=n; else if(h==='espacios') espacios=n; else if(h==='departamentos') departamentos=n;
+  else return false;
+  _r3Anotar(h, raw);
+  if(h==='tickets'||h==='activos'||h==='mobiliario') _reinyectarPendientes(h);
+  try{ renderAll(); }catch(e){}
+  _r3RenderForm(h);
+  return true;
+}
 const _R3_RENDER_FORM = {licencias:'renderLicencias', personas:'renderPersonas', espacios:'renderEspacios', departamentos:'renderDepartamentos'};
 function _r3RenderForm(h){ try{ if(_R3_RENDER_FORM[h]) window[_R3_RENDER_FORM[h]](); buildDataLists(); }catch(e){} }
 // Conflicto de un formulario de personas, espacios, departamentos o licencias (se guarda con _guardarConfirmado)
-function _r3AbrirConflictoForm(h, obj, res){
+function _r3AbrirConflictoForm(h, obj, res, opts){
+  opts = opts||{};
   const reg = _r3Buscar(h, obj) || obj, key = 'form-'+h+'-'+obj.codigo;
-  _pend.set(key, {key, hoja:h, registro:reg, registros:[reg], op:{vistas:[], base:_r3BaseAbierta(h,obj.codigo,null), formulario:true},
+  _pend.set(key, {key, hoja:h, registro:reg, registros:[reg], op:{vistas:[], base:opts.base||_r3BaseAbierta(h,obj.codigo,null), intencion:opts.intencion||null, formulario:true},
     estado:'conflicto', payload:{...obj}, opId:null,
     conflicto:{actual:(res.actual&&typeof res.actual==='object')?res.actual:null, campos:Array.isArray(res.campos)?res.campos:[]}});
+  reg._pendKey = key; // el registro queda protegido del sondeo mientras la ventana esté abierta
   resolverConflicto(key);
 }
 function _r3ConflictoGuardar(key){
   const e = _pend.get(key); if(!e || e.estado!=='conflicto' || !e.conflicto || !e.conflicto.actual) return;
   const c = _r3Combinar(e), act = e.conflicto.actual, reg = e.registro;
   if(e.op.formulario){
-    _pend.delete(key);
+    e.estado = 'enviando'; // la entrada (y la protección del registro) siguen hasta terminar
     (async()=>{
       try{
-        await _guardarConfirmado(e.hoja, 'update', c.payload); // lleva la _version del servidor: si hay otro cambio, otra ventana
+        await _guardarConfirmado(e.hoja, 'update', c.payload, {base:e.op.base, intencion:e.op.intencion}); // lleva la _version del servidor: si hay otro cambio, otra ventana
         const mem = _r3Norm(e.hoja, c.payload);
         Object.keys(mem).forEach(k=>{ if(k.charAt(0)==='_' && k!=='_version') return; reg[k]=mem[k]; });
         closeModals(); _r3RenderForm(e.hoja);
         showToast('✅ Tus cambios se guardaron sobre la versión nueva','success');
       }catch(err){ if(!err.conflicto) showToast('Error: '+err.message,''); }
+      finally{ if(_pend.get(key)===e){ _pend.delete(key); e.registros.forEach(r=>{ delete r._pendKey; }); } }
     })();
     return;
   }
@@ -5605,8 +5653,8 @@ async function confirmDelete(){
   const{type,id}=pendingDelete;
   if(type==='activo'){
     const a=activos.find(x=>x.codigo===id);if(!a)return;
-    const _estPrevA=a.estado;a.estado='eliminado';a.historial=a.historial||[];a.historial.push({tipo:'Eliminación lógica',desc:`Eliminado por ${session.nombre}. Motivo: ${motivo}`,fecha:ts(),usuario:session.nombre,color:'red'});
-    try{await _guardarConfirmado('activos','update',a);}catch(e){a.estado=_estPrevA;a.historial.pop();showToast('⚠ No se pudo eliminar: '+e.message,'error');return;}audit('ELIMINAR','Activo',a.codigo,`Por ${session.nombre}. Motivo: ${motivo}`);
+    const _bA={...a,historial:(a.historial||[]).slice()};const _estPrevA=a.estado;a.estado='eliminado';a.historial=a.historial||[];a.historial.push({tipo:'Eliminación lógica',desc:`Eliminado por ${session.nombre}. Motivo: ${motivo}`,fecha:ts(),usuario:session.nombre,color:'red'});
+    try{await _guardarConfirmado('activos','update',a,{base:_bA});}catch(e){a.estado=_estPrevA;a.historial.pop();showToast('⚠ No se pudo eliminar: '+e.message,'error');return;}audit('ELIMINAR','Activo',a.codigo,`Por ${session.nombre}. Motivo: ${motivo}`);
   }else if(type==='mobiliario'){
     const m=mobiliario.find(x=>x.codigo===id);if(!m)return;
     const hist=[...parseHist(m.historial),{tipo:'Eliminación lógica',desc:`Eliminado por ${session.nombre}. Motivo: ${motivo}`,fecha:ts(),usuario:session.nombre,color:'red'}];
@@ -5619,8 +5667,8 @@ async function confirmDelete(){
     return;
   }else{
     const t=tickets.find(x=>x.codigo===id);if(!t)return;
-    const _estPrevT=t.estado;t.estado='eliminado';t.historial=t.historial||[];t.historial.push({tipo:'Eliminación lógica',desc:`Eliminado por ${session.nombre}. Motivo: ${motivo}`,fecha:ts(),usuario:session.nombre,color:'red'});
-    try{await _guardarConfirmado('tickets','update',t);}catch(e){t.estado=_estPrevT;t.historial.pop();showToast('⚠ No se pudo eliminar: '+e.message,'error');return;}audit('ELIMINAR','Ticket',t.codigo,`Por ${session.nombre}. Motivo: ${motivo}`);
+    const _bT={...t,historial:(t.historial||[]).slice()};const _estPrevT=t.estado;t.estado='eliminado';t.historial=t.historial||[];t.historial.push({tipo:'Eliminación lógica',desc:`Eliminado por ${session.nombre}. Motivo: ${motivo}`,fecha:ts(),usuario:session.nombre,color:'red'});
+    try{await _guardarConfirmado('tickets','update',t,{base:_bT});}catch(e){t.estado=_estPrevT;t.historial.pop();showToast('⚠ No se pudo eliminar: '+e.message,'error');return;}audit('ELIMINAR','Ticket',t.codigo,`Por ${session.nombre}. Motivo: ${motivo}`);
   }
   closeModals();renderAll();if(type==='activo')go('activos',document.getElementById('nav-activos'));
 }
@@ -8831,7 +8879,8 @@ function _impMotivo(res){
 // Guardado de formularios con confirmación real del servidor. Sin conexión usa la cola
 // de siempre (apiPost); con conexión espera la respuesta y, si el servidor rechaza el
 // registro, lanza un Error con su mensaje para que el formulario no diga "guardado".
-async function _guardarConfirmado(sheet, action, obj){
+async function _guardarConfirmado(sheet, action, obj, opts){
+  if(obj){ delete obj._pendKey; delete obj._estadoGuardado; } // marcas de pantalla: no viajan al servidor
   // R3: un formulario de edición manda la versión de cuando se abrió (_r3Abrir), no la que haya ahora en la lista
   const ab = (action==='update' && obj && obj.codigo && _R3_HOJAS.includes(sheet)) ? _r3Abierto[sheet+':'+obj.codigo] : null;
   if(ab && obj._version===undefined && ab.version!==undefined) obj._version = ab.version;
@@ -8840,7 +8889,7 @@ async function _guardarConfirmado(sheet, action, obj){
   if(res && res.error==='VALIDACION' && fvServidorPorHoja(sheet, res.campos)) throw new Error(_MSG_ERR_SERVIDOR.VALIDACION);
   if(res && res.error==='CONFLICTO'){
     // R3: se abre la ventana de conflicto (guardar mis cambios sobre la versión nueva / descartar); la lista no se toca
-    _r3AbrirConflictoForm(sheet, obj, res);
+    _r3AbrirConflictoForm(sheet, obj, res, opts);
     const er = new Error(_MSG_ERR_SERVIDOR.CONFLICTO); er.conflicto = true; throw er;
   }
   if(!res || !res.ok) throw new Error(_impMotivo(res));
@@ -11028,7 +11077,7 @@ async function eliminarLicencia(codigo){
   const l = licencias.find(x=>x.codigo===codigo);
   if(!l) return;
   try{
-    await _guardarConfirmado('licencias','update',{...l, estado:'eliminado', instalaciones:JSON.stringify(l.instalaciones||[]), historial:JSON.stringify(l.historial||[])});
+    await _guardarConfirmado('licencias','update',{...l, estado:'eliminado', instalaciones:JSON.stringify(l.instalaciones||[]), historial:JSON.stringify(l.historial||[])},{base:{...l,instalaciones:(l.instalaciones||[]).slice()}});
     l.estado='eliminado';
     audit('ELIMINAR','Licencia',codigo,`Eliminado: ${l.nombre}`);
     renderLicencias();
@@ -11087,7 +11136,7 @@ async function asignarLicenciaAEquipo(){
     await _guardarConfirmado('licencias','update',{
       ...l, instalaciones: JSON.stringify(instalacionesNuevas), historial: JSON.stringify(l.historial||[]),
       costoAnual:l.costoAnual, cantidadTotal:l.cantidadTotal
-    });
+    },{base:{...l,instalaciones:(l.instalaciones||[]).slice()}, intencion:{agregar:[nuevaInstalacion]}});
     l.instalaciones = instalacionesNuevas;
     audit('EDITAR','Licencia',codigo,`Instalada en equipo ${activoCodigo} por ${session.nombre}`);
     abrirDetalleLicencia(codigo);
@@ -11102,7 +11151,9 @@ async function quitarInstalacionLicencia(codigo, idx){
   if(!confirm('¿Quitar este equipo de la lista de instalaciones de la licencia?')) return;
   const instalacionesNuevas = (l.instalaciones||[]).filter((_,i)=>i!==idx);
   try{
-    await _guardarConfirmado('licencias','update',{...l, instalaciones: JSON.stringify(instalacionesNuevas), historial: JSON.stringify(l.historial||[])});
+    const _quitada = (l.instalaciones||[])[idx];
+    await _guardarConfirmado('licencias','update',{...l, instalaciones: JSON.stringify(instalacionesNuevas), historial: JSON.stringify(l.historial||[])},
+      {base:{...l,instalaciones:(l.instalaciones||[]).slice()}, intencion:{quitar:_quitada?[_quitada.activoCodigo]:[]}});
     l.instalaciones = instalacionesNuevas;
     audit('EDITAR','Licencia',codigo,`Instalación removida por ${session.nombre}`);
     abrirDetalleLicencia(codigo);
@@ -11582,7 +11633,7 @@ async function eliminarPersona(codigo){
   const p = personas.find(x=>x.codigo===codigo);
   if(!p) return;
   try{
-    await _guardarConfirmado('personas','update',{...p,estado:'eliminado'});
+    await _guardarConfirmado('personas','update',{...p,estado:'eliminado'},{base:{...p}});
     p.estado='eliminado';
     audit('ELIMINAR','Personas',codigo,`Eliminada: ${p.nombre}`);
     renderPersonas();
@@ -11788,7 +11839,7 @@ async function eliminarEspacio(codigo){
   const e = espacios.find(x=>x.codigo===codigo);
   if(!e) return;
   try{
-    await _guardarConfirmado('espacios','update',{...e,estado:'eliminado'});
+    await _guardarConfirmado('espacios','update',{...e,estado:'eliminado'},{base:{...e}});
     e.estado='eliminado';
     audit('ELIMINAR','Espacios',codigo,`Eliminado: ${e.nombre}`);
     renderEspacios();
@@ -11947,7 +11998,7 @@ async function eliminarDepartamento(codigo){
   }
   if(!confirm('¿Eliminar el departamento "'+d.nombre+'"?')) return;
   try{
-    await _guardarConfirmado('departamentos','update',{...d,estado:'eliminado'});
+    await _guardarConfirmado('departamentos','update',{...d,estado:'eliminado'},{base:{...d}});
     d.estado='eliminado';
     audit('ELIMINAR','Departamentos',codigo,`Eliminado: ${d.nombre}`);
     renderDepartamentos();
