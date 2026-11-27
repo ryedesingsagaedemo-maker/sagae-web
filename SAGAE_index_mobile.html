@@ -1199,7 +1199,7 @@ function _recortarHistLigero(hist){
 }
 function _ligeroParaCache(o){
   const c = {...o};
-  ['_isTakeTicket','_respEsperado','_guardando','_errGuardado'].forEach(k=>delete c[k]);
+  ['_isTakeTicket','_respEsperado','_guardando','_errGuardado','_conflicto'].forEach(k=>delete c[k]);
   const hist = parseHist(o.historial);
   c._histTotal = (o._histLigero && o._histTotal) ? o._histTotal : hist.length;
   c.historial = _recortarHistLigero(hist);
@@ -1223,7 +1223,7 @@ function loadCache(){try{const c=JSON.parse(localStorage.getItem(CACHE_KEY)||"nu
   activos=c.activos||[];cntTickets=tickets.length;
   if(c.ts) _ultimaSyncOk=c.ts;
   return true;}}catch(e){}return false;}
-async function apiGet(sheet, intento=1){
+async function apiGet(sheet, intento=1, params=''){
   /* v2.9: Google a veces demora o devuelve 404 aunque el servidor ya haya
      respondido. Se reintenta hasta 3 veces con una pausa creciente. */
   const MAX_INTENTOS = 3;
@@ -1234,19 +1234,22 @@ async function apiGet(sheet, intento=1){
     /* v4.3: los tickets se piden en modo liviano (historial recortado, sin
        fotos de eventos); el detalle completo llega al abrir el ticket. */
     const modoLigero = (sheet==='tickets') ? '&mode=light' : '';
-    const r=await fetch(API+"?sheet="+sheet+tok+modoLigero+"&t="+Date.now(),{mode:"cors", signal:controller.signal});
+    /* R3: la lectura completa pide también el «hasta» (un servidor viejo lo ignora); los sondeos mandan &desde=… */
+    const conHasta = (_R3_HOJAS.includes(sheet) && !params.includes('desde=')) ? '&conHasta=1' : '';
+    const r=await fetch(API+"?sheet="+sheet+tok+modoLigero+conHasta+params+"&t="+Date.now(),{mode:"cors", signal:controller.signal});
     clearTimeout(timer);
     if(!r.ok) throw new Error("HTTP "+r.status);
     const d=await r.json();
     if(d && d.ok===false && d.error==='SESSION_INVALID'){ _sesionExpiradaMobile(); return []; }
     if(d && d.ok===false && d.error==='CAMBIO_PASSWORD_OBLIGATORIO'){ _mostrarForzarPassMobile(); return []; }
     if(d && d.ok===false && d.error==='TERMINOS_PENDIENTES'){ _mostrarTerminosMobile(null,_refrescarTrasTerminosMobile); return []; }
+    if(d && d.ok===true && Array.isArray(d.items)){ const arr=d.items.slice(); arr._hasta=d.hasta||''; arr._incr=(d.completo===false); return arr; }
     return Array.isArray(d)?d:[];
   }
   catch(e){
     if(intento<MAX_INTENTOS){
       await new Promise(res=>setTimeout(res, intento*1500));
-      return apiGet(sheet, intento+1);
+      return apiGet(sheet, intento+1, params);
     }
     return null;
   }
@@ -1275,7 +1278,7 @@ function _mapTicketsMob(raw, previos){
 /* Los registros con guardado pendiente o fallido (solo existen en esta sesión)
    no se pierden cuando llega una lista nueva del servidor. */
 function _conservarPendientesMob(nueva, anterior){
-  const pend = (anterior||[]).filter(x=>x && (x._guardando || x._errGuardado));
+  const pend = (anterior||[]).filter(x=>x && (x._guardando || x._errGuardado || x._conflicto));
   if(!pend.length) return nueva;
   const porCod = new Map(pend.map(x=>[x.codigo,x]));
   const usados = new Set();
@@ -1334,16 +1337,215 @@ async function _completarActivoMob(a){
 /* Un registro con guardado fallido o aún provisional no se puede editar: el borrador
    de edición pisaría al de alta y el registro se perdería. Primero se reintenta o descarta. */
 function _bloqueadoPorPendienteMob(o){
-  if(o && (o._errGuardado || o._temporal)){
+  if(o && (o._errGuardado || o._conflicto || o._temporal)){
     showToast('Primero reintenta o descarta el guardado pendiente (botones en la tarjeta).','error',4500);
     return true;
   }
   return false;
 }
+/* ════════════════════════════════════════════════════════════════════
+   R3 · VARIOS TÉCNICOS A LA VEZ (móvil). Misma idea que la web:
+   · cada registro lleva `_version` y `actualizado` (los pone el servidor v13) y todo update envía la `_version` leída;
+   · si otra persona guardó antes, el servidor responde CONFLICTO: la tarjeta queda «⚠ Conflicto · Resolver» (hoja inferior);
+   · sondeos con `desde` (lectura incremental) y recarga completa de seguridad cada 15 minutos.
+   Un servidor viejo no manda `_version` ni `hasta`: todo sigue como antes. */
+const _R3_HOJAS = ['activos','mobiliario','licencias','tickets','personas','espacios','departamentos'];
+const _R3_COMPLETA_MS = 15*60*1000;
+const _R3_NO_CAMPO = ['id','actualizado','historial','fotos','foto','instalaciones'];
+const _r3Hasta = {}, _r3Completa = {}, _r3Abierto = {};
+let _r3OcultoDesde = 0;
+document.addEventListener('visibilitychange', ()=>{
+  if(document.hidden){ _r3OcultoDesde = Date.now(); return; }
+  if(_r3OcultoDesde && Date.now()-_r3OcultoDesde > _R3_COMPLETA_MS) Object.keys(_r3Hasta).forEach(k=>{ delete _r3Hasta[k]; });
+  _r3OcultoDesde = 0;
+});
+function _r3Lista(h){
+  return h==='tickets'?tickets : h==='activos'?activos : h==='mobiliario'?mobiliario
+       : h==='personas'?personas : h==='espacios'?espacios : h==='departamentos'?departamentos : null;
+}
+function _r3Norm(h, r, previos){
+  if(h==='tickets') return _mapTicketsMob([r], previos)[0];
+  if(h==='activos') return _mapActivosMob([r])[0];
+  if(h==='mobiliario') return {...r, cantidad:parseInt(r.cantidad)||1, valor:parseFloat(r.valor)||0, historial:parseHist(r.historial)};
+  return {...r};
+}
+function _r3Buscar(h, p){
+  const l = _r3Lista(h); if(!Array.isArray(l) || !p || p.codigo==null) return null;
+  return l.find(x=>x && x.codigo===p.codigo) || null;
+}
+function _r3AplicarVersion(reg, res){
+  if(!reg || !res || typeof res!=='object') return;
+  if(res._version!=null) reg._version = res._version;
+  if(res.actualizado) reg.actualizado = res.actualizado;
+}
+function _r3Pendiente(x){ return !!(x && (x._guardando || x._errGuardado || x._conflicto || x._temporal)); }
+function _r3Mezclar(h, lista, items){
+  const res = lista.slice();
+  items.forEach(r=>{
+    if(!r || !r.codigo) return;
+    const i = res.findIndex(x=>x && x.codigo===r.codigo);
+    if(i>=0 && _r3Pendiente(res[i])) return;
+    const n = _r3Norm(h, r, lista);
+    if(i>=0) res[i]=n; else res.push(n);
+  });
+  return res;
+}
+function _r3Anotar(h, raw){
+  if(!_R3_HOJAS.includes(h) || !raw) return;
+  if(raw._hasta){ _r3Hasta[h]=raw._hasta; _r3Completa[h]=Date.now(); }
+  else { delete _r3Hasta[h]; delete _r3Completa[h]; }
+}
+function _r3PuedeIncremental(h){ return !!_r3Hasta[h] && (Date.now()-(_r3Completa[h]||0)) < _R3_COMPLETA_MS; }
+function _r3Abrir(h, codigo){
+  const r = (_r3Lista(h)||[]).find(x=>x && x.codigo===codigo);
+  if(r) _r3Abierto[h+':'+codigo] = {version:r._version, base:{...r}};
+}
+function _r3VersionAbierta(h, codigo, reg){ const a=_r3Abierto[h+':'+codigo]; return a ? a.version : (reg&&reg._version); }
+function _r3BaseAbierta(h, codigo, porDefecto){ const a=_r3Abierto[h+':'+codigo]; return a ? a.base : porDefecto; }
+function _r3Cerrar(h, codigo){ delete _r3Abierto[h+':'+codigo]; }
+function _r3AplicarActual(h, actual){
+  const l = _r3Lista(h); if(!actual || !actual.codigo || !Array.isArray(l)) return;
+  const i = l.findIndex(x=>x && x.codigo===actual.codigo);
+  if(i>=0 && _r3Pendiente(l[i])) return;
+  const n = _r3Norm(h, actual, l);
+  if(i>=0) l[i]=n; else l.push(n);
+}
+function _r3PrepararEnvio(sheet, action, secure){
+  delete secure.actualizado;
+  if(action==='update' && secure._version===undefined && _R3_HOJAS.includes(sheet)){
+    const r = _r3Buscar(sheet, secure);
+    if(r && r._version!=null) secure._version = r._version;
+  }
+}
+function _r3AplicarRespuesta(sheet, action, original, res){
+  if(!res || res.ok!==true || !_R3_HOJAS.includes(sheet) || (action!=='update' && action!=='insert')) return;
+  _r3AplicarVersion(_r3Buscar(sheet, original), res);
+  if(original && typeof original==='object') _r3AplicarVersion(original, res);
+}
+function _r3Igual(a,b){ const f=v=>v==null?'':(typeof v==='object'?JSON.stringify(v):String(v)); return f(a)===f(b); }
+function _r3Diff(a, b){
+  a=a||{}; b=b||{}; const out=[];
+  new Set([...Object.keys(a),...Object.keys(b)]).forEach(k=>{
+    if(k.charAt(0)==='_' || _R3_NO_CAMPO.includes(k)) return;
+    if(!_r3Igual(a[k],b[k])) out.push(k);
+  });
+  return out;
+}
+function _r3UnirHist(a, b){
+  const ya=parseHist(a), vistos=new Set(ya.map(x=>JSON.stringify(x)));
+  return ya.concat(parseHist(b).filter(x=>!vistos.has(JSON.stringify(x))));
+}
+/* Update de una hoja leyendo la respuesta. `campos` (arreglo): campos que este cambio deja fijos; con CONFLICTO se
+   reaplican sobre la versión actual del servidor (historial unido) y se reenvía una vez. */
+async function _r3Update(h, reg, campos){
+  if(typeof _mobOnline!=='undefined' && !_mobOnline) return apiPost(h,'update',_payloadMob(reg));
+  let res = await apiPostAsync(h,'update',_payloadMob(reg),60000);
+  if(res && res.ok===false && res.error==='CONFLICTO' && Array.isArray(campos) && res.actual){
+    const act = res.actual, m = {...act};
+    campos.forEach(k=>{ m[k]=reg[k]; });
+    m.historial = _r3UnirHist(act.historial, reg.historial); m._version = act._version; delete m.actualizado;
+    res = await apiPostAsync(h,'update',m,60000);
+    if(res && res.ok){
+      Object.keys(act).forEach(k=>{ if(k.charAt(0)!=='_' && !_R3_NO_CAMPO.includes(k) && !campos.includes(k)) reg[k]=act[k]; });
+      reg.historial = m.historial; _r3AplicarVersion(reg, res);
+    }
+  }
+  if(!res || res.ok===false){
+    if(res && res.error==='CONFLICTO'){
+      _r3AplicarActual(h, res.actual);
+      showToast('⚠ Otra persona modificó '+(reg.codigo||'el registro')+' al mismo tiempo. Se cargó la versión nueva: revisa y repite tu cambio.','error',5000);
+    }else showToast('⚠ No se guardó el cambio en '+(reg.codigo||h)+': '+_msgServidor(res,'sin respuesta'),'error',5000);
+  }
+  return res;
+}
+/* ── Conflicto en un guardado optimista (ticket 'tkt' o activo 'act') ── */
+function _marcarConflictoMob(o, res, tipo){
+  delete o._guardando; delete o._errGuardado; o._conflicto = true;
+  const w = _borradoresMob.get(tipo+':'+o.codigo);
+  if(w) w.conflicto = {actual:(res.actual&&typeof res.actual==='object')?res.actual:null, campos:Array.isArray(res.campos)?res.campos:[]};
+  try{ renderTickets(); renderDashboard(); renderActivos(); }catch(e){}
+  showToast('⚠ Otra persona modificó '+o.codigo+' mientras lo editabas. Toca «Conflicto · Resolver» en la tarjeta.','error',5000);
+}
+function _r3Combinar(act, payload, base, campos){
+  const mios = base ? _r3Diff(payload, base) : _r3Diff(payload, act); // sin base, lo disputado lo gana la persona
+  const otros = (campos && campos.length) ? campos : (base ? _r3Diff(act, base) : []);
+  const m = {...payload};
+  Object.keys(act).forEach(k=>{
+    if(k.charAt(0)==='_' || _R3_NO_CAMPO.includes(k)) return;
+    if(!mios.includes(k)) m[k] = act[k];
+  });
+  m._version = act._version; delete m.actualizado;
+  return {payload:m, mios, otros};
+}
+function _r3TxtValor(v){ return (v==null||v==='') ? '—' : (typeof v==='object' ? JSON.stringify(v) : String(v)); }
+async function _r3TraerActual(h, codigo){
+  if(h==='tickets') return await apiGetTicketDetailMob(codigo);
+  const raw = await apiGet(h);
+  return Array.isArray(raw) ? (raw.find(x=>x && x.codigo===codigo)||null) : null;
+}
+async function resolverConflictoMob(tipo, codigo, ev){
+  if(ev) ev.stopPropagation();
+  const w = _borradoresMob.get(tipo+':'+codigo); if(!w) return;
+  const h = tipo==='tkt' ? 'tickets' : 'activos';
+  if(!w.conflicto || !w.conflicto.actual){
+    const act = await _r3TraerActual(h, codigo);
+    if(!act){ showToast('No se pudo traer la versión actual del servidor. Intenta de nuevo.','error'); return; }
+    w.conflicto = {actual:act, campos:(w.conflicto&&w.conflicto.campos)||[]};
+  }
+  const act = w.conflicto.actual, c = _r3Combinar(act, w.payload, w.base||w.prev, w.conflicto.campos);
+  let ov = document.getElementById('cf-overlay'), sh = document.getElementById('cf-sheet');
+  if(!ov){
+    ov = document.createElement('div'); ov.id='cf-overlay'; ov.className='sheet-overlay'; ov.onclick = cerrarConflictoMob;
+    sh = document.createElement('div'); sh.id='cf-sheet'; sh.className='bottom-sheet';
+    document.body.appendChild(ov); document.body.appendChild(sh);
+  }
+  const campos = [...c.mios, ...c.otros.filter(k=>!c.mios.includes(k) && !_R3_NO_CAMPO.includes(k) && k.charAt(0)!=='_')];
+  const filas = campos.map(k=>{
+    const otra = c.otros.includes(k);
+    return '<div class="cf-fila'+(otra?' cf-otra':'')+'" style="padding:8px 10px;border-radius:8px;margin-bottom:6px;font-size:13px;'+(otra?'background:#FEF08A':'background:#F3F4F6')+'">'
+      +'<div style="font-weight:700">'+_escHtml(k)+(otra?' ⚠':'')+'</div>'
+      +'<div>Versión actual: <b>'+_escHtml(_r3TxtValor(act[k]))+'</b></div>'
+      +'<div>Tus cambios: '+(c.mios.includes(k)?'<b>'+_escHtml(_r3TxtValor(w.payload[k]))+'</b>':'<span style="color:#6B7280">(no lo cambiaste)</span>')+'</div></div>';
+  }).join('');
+  sh.innerHTML = '<div class="sheet-handle"></div><div class="sheet-header"><div class="sheet-title">⚠ Otra persona modificó este registro</div><div class="sheet-code">'+_escHtml(codigo)+'</div></div>'
+    +'<div class="sheet-body"><p style="font-size:13px;margin:0 0 10px">Se muestra el registro actual del servidor y tus cambios encima. Lo marcado en amarillo lo cambió la otra persona.</p>'
+    +(filas || '<div style="font-size:13px;color:#6B7280;margin-bottom:8px">Solo cambia el historial o las fotos, que se unen sin perder nada.</div>')
+    +'<p style="font-size:11px;color:#6B7280;margin:6px 0 12px">El historial y las fotos de ambas personas se unen: no se pierde ningún evento.</p>'
+    +'<button class="btn-primary" id="cf-guardar" onclick="_r3ConflictoGuardarMob(\''+_jsArg(tipo)+'\',\''+_jsArg(codigo)+'\')">Guardar mis cambios sobre la versión nueva</button>'
+    +'<button class="btn-secondary" id="cf-descartar" onclick="_r3ConflictoDescartarMob(\''+_jsArg(tipo)+'\',\''+_jsArg(codigo)+'\')">Descartar mis cambios</button></div>';
+  ov.classList.add('open'); sh.classList.add('open');
+}
+function cerrarConflictoMob(){
+  const ov=document.getElementById('cf-overlay'), sh=document.getElementById('cf-sheet');
+  if(ov) ov.classList.remove('open'); if(sh) sh.classList.remove('open');
+}
+function _r3ConflictoGuardarMob(tipo, codigo){
+  const w = _borradoresMob.get(tipo+':'+codigo); if(!w || !w.conflicto || !w.conflicto.actual) return;
+  const h = tipo==='tkt' ? 'tickets' : 'activos', lista = _r3Lista(h);
+  const o = lista.find(x=>x.codigo===codigo); if(!o) return;
+  const act = w.conflicto.actual, c = _r3Combinar(act, w.payload, w.base||w.prev, w.conflicto.campos);
+  c.payload._opId = _generarOpId(); w.payload = c.payload; w.conflicto = null;
+  const mem = _r3Norm(h, {...c.payload, historial:_r3UnirHist(act.historial, c.payload.historial)}, lista);
+  Object.keys(mem).forEach(k=>{ if(k.charAt(0)==='_' && k!=='_version') return; o[k]=mem[k]; });
+  delete o._conflicto; delete o._histLigero; delete o._histTotal; o._guardando = true;
+  cerrarConflictoMob();
+  renderTickets(); renderDashboard(); renderActivos();
+  if(tipo==='tkt') _enviarTicketMob(codigo); else _enviarActivoMob(codigo);
+}
+function _r3ConflictoDescartarMob(tipo, codigo){
+  const w = _borradoresMob.get(tipo+':'+codigo);
+  const h = tipo==='tkt' ? 'tickets' : 'activos', lista = _r3Lista(h);
+  _borradoresMob.delete(tipo+':'+codigo);
+  const i = lista.findIndex(x=>x.codigo===codigo);
+  const act = w && w.conflicto && w.conflicto.actual;
+  if(i>=0){ if(act) lista[i] = _r3Norm(h, act, lista); else { delete lista[i]._conflicto; if(w&&w.prev) lista[i]=w.prev; } }
+  cerrarConflictoMob(); saveCache(); renderTickets(); renderDashboard(); renderActivos(); updateBadge();
+  showToast('Se descartaron tus cambios: queda la versión de la otra persona.','');
+}
 /* Datos que viajan al servidor: sin banderas internas de pantalla. */
 function _payloadMob(o, extra){
   const p = {...o, ...(extra||{})};
-  ['_histLigero','_histTotal','_guardando','_errGuardado','_temporal','_isTakeTicket','_respEsperado'].forEach(k=>{ if(!(extra&&k in extra)) delete p[k]; });
+  ['_histLigero','_histTotal','_guardando','_errGuardado','_conflicto','_temporal','_isTakeTicket','_respEsperado'].forEach(k=>{ if(!(extra&&k in extra)) delete p[k]; });
   return p;
 }
 /* Guardado optimista: borradores en memoria (sobreviven mientras la app esté abierta). */
@@ -1719,7 +1921,8 @@ const _MSG_ERR_SERVIDOR={
   HISTORIAL_GUARDADO_DANADO:'El historial de este registro está dañado; avisa al administrador.',
   HISTORIAL_LLENO:'El historial de este registro llegó a su límite; avisa al administrador.',
   VALIDACION:'Revisa los campos marcados.',
-  CONSENTIMIENTO_REQUERIDO:'Debes aceptar el Aviso de Privacidad para enviar el reporte.'
+  CONSENTIMIENTO_REQUERIDO:'Debes aceptar el Aviso de Privacidad para enviar el reporte.',
+  CONFLICTO:'Otra persona modificó este registro mientras lo editabas. Se cargó la versión nueva: revisa y vuelve a guardar tus cambios.'
 };
 function _msgServidor(res,pordefecto){ return (res&&_MSG_ERR_SERVIDOR[res.error]) || (res&&(res.message||res.error)) || pordefecto || 'sin respuesta'; }
 async function apiPostAsync(sheet, action, payload, timeoutMs=60000){
@@ -1727,6 +1930,7 @@ async function apiPostAsync(sheet, action, payload, timeoutMs=60000){
   const securePayload = {...(payload||{}), _apiToken: API_TOKEN, _requestId: requestId,
                          _sessionToken: (typeof session!=='undefined'&&session)?session.token:null,
                          _opId: (payload&&payload._opId) || _generarOpId()};
+  _r3PrepararEnvio(sheet,action,securePayload);
   fetch(API, {
     method:'POST', mode:'no-cors',
     headers:{'Content-Type':'application/json'},
@@ -1746,7 +1950,7 @@ async function apiPostAsync(sheet, action, payload, timeoutMs=60000){
         const d = await r.json();
         if(d && d.error==='CAMBIO_PASSWORD_OBLIGATORIO' && action!=='cambiar_mi_password') _mostrarForzarPassMobile();
         if(d && d.error==='TERMINOS_PENDIENTES' && action!=='aceptar_terminos') _mostrarTerminosMobile(null,_refrescarTrasTerminosMobile);
-        if(d && typeof d==='object' && !Array.isArray(d) && !d.pending) return d;
+        if(d && typeof d==='object' && !Array.isArray(d) && !d.pending){ _r3AplicarRespuesta(sheet,action,payload,d); return d; }
       }
     }catch(e){ }
     await new Promise(r=>setTimeout(r, intervalo));
@@ -1862,6 +2066,7 @@ function apiPost(sheet,action,payload){
   try{
     const securePayload = {...(payload||{}), _apiToken: API_TOKEN, _sessionToken: (typeof session!=='undefined'&&session)?session.token:null,
                            _opId: (payload&&payload._opId) || _generarOpId()};
+    _r3PrepararEnvio(sheet,action,securePayload);
     const body = JSON.stringify({sheet,action,payload:securePayload});
     if(!_mobOnline){
       _mobQueue.push({body}); setSyncStatus(false); return Promise.resolve(true);
@@ -1921,8 +2126,8 @@ async function loadData(){
         ]);
         const tOk = rawT && !_listaVaciaSospechosa(rawT, tickets);
         const aOk = rawA && !_listaVaciaSospechosa(rawA, activos);
-        if(tOk)tickets=_conservarPendientesMob(_mapTicketsMob(rawT,tickets),tickets);
-        if(aOk)activos=_conservarPendientesMob(_mapActivosMob(rawA),activos);
+        if(tOk){_r3Anotar('tickets',rawT);tickets=_conservarPendientesMob(_mapTicketsMob(rawT,tickets),tickets);}
+        if(aOk){_r3Anotar('activos',rawA);activos=_conservarPendientesMob(_mapActivosMob(rawA),activos);}
         if(rawDep)departamentos=rawDep.map(r=>({...r}));
         if(rawEsp)espacios=rawEsp.map(r=>({...r}));
         if(rawPer)personas=rawPer.map(r=>({...r}));
@@ -1958,8 +2163,8 @@ async function cargarDatosPostLogin(){
     ], 3, 100);
     const tFalla = rawT===null || _listaVaciaSospechosa(rawT, tickets);
     const aFalla = rawA===null || _listaVaciaSospechosa(rawA, activos);
-    if(!tFalla){tickets=_conservarPendientesMob(_mapTicketsMob(rawT,tickets),tickets);cntTickets=tickets.length;}
-    if(!aFalla){activos=_conservarPendientesMob(_mapActivosMob(rawA),activos);}
+    if(!tFalla){_r3Anotar('tickets',rawT);tickets=_conservarPendientesMob(_mapTicketsMob(rawT,tickets),tickets);cntTickets=tickets.length;}
+    if(!aFalla){_r3Anotar('activos',rawA);activos=_conservarPendientesMob(_mapActivosMob(rawA),activos);}
     saveCache();
     const fallaron=[];
     if(tFalla) fallaron.push("tickets");
@@ -1991,6 +2196,7 @@ async function _cargarDatosSecundariosMobile(){
     if(rawDep){departamentos=rawDep.map(r=>({...r}));}
     if(rawEsp){espacios=rawEsp.map(r=>({...r}));}
     if(rawPer){personas=rawPer.map(r=>({...r}));}
+    _r3Anotar('departamentos',rawDep);_r3Anotar('espacios',rawEsp);_r3Anotar('personas',rawPer);_r3Anotar('mobiliario',rawMob);
     if(rawMob){mobiliario=rawMob.map(r=>({...r,cantidad:parseInt(r.cantidad)||1,valor:parseFloat(r.valor)||0,historial:parseHist(r.historial)}));}
     saveCache();
   }catch(e){
@@ -2334,6 +2540,11 @@ function puedeTomar(t){
   return session.rol==="admin" || PERMITIR_REASIGNACION_TECNICOS;
 }
 function _marcaGuardadoMob(o, tipo){
+  if(o._conflicto){
+    const c=_jsArg(o.codigo);
+    return '<div class="marca-conflicto" style="margin-top:6px;font-size:11px;font-weight:700;color:#92400E">⚠ Conflicto · '
+      +'<button onclick="resolverConflictoMob(\''+tipo+'\',\''+c+'\',event)" style="background:#F59E0B;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer">Resolver</button></div>';
+  }
   if(o._guardando) return '<div class="marca-guardando" style="margin-top:6px;font-size:11px;font-weight:700;color:#8A6A00">⏳ Guardando…</div>';
   if(o._errGuardado){
     const c=_jsArg(o.codigo);
@@ -2398,14 +2609,9 @@ async function apiPostConRespuesta(sheet, action, payload){
     }catch(e){ }
   }
   try{
-    const securePayload = {...(payload||{}), _apiToken: API_TOKEN, _sessionToken: (typeof session!=='undefined'&&session)?session.token:null};
-    await fetch(API, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({sheet, action, payload: securePayload})
-    });
-    return {ok: true};
+    /* R3: apiPostAsync lee la respuesta real (ya lo tomó otra persona, CONFLICTO de versión, versión nueva) */
+    if(!_mobOnline) return {ok:false, error:'OFFLINE', message:'Sin conexión.'};
+    return await apiPostAsync(sheet, action, payload, 60000);
   } catch(e){
     return {ok: false, error: e.message};
   }
@@ -2420,7 +2626,7 @@ async function tomarTicket(codigo, e){
   if(esMiTicket(t)){
     showToast('Ya eres el responsable',''); return;
   }
-  if(t._guardando || t._errGuardado){
+  if(t._guardando || t._errGuardado || t._conflicto){
     showToast('Este ticket tiene un guardado pendiente. Espera o reinténtalo antes de tomarlo.',''); return;
   }
   if(!puedeTomar(t)){
@@ -2476,6 +2682,11 @@ async function tomarTicket(codigo, e){
     t.estado = estadoAntes;
     renderTickets();
     showToast('⚠ '+resultado.takenBy+' tomó este ticket antes que tú.','error');
+  } else if(resultado.error === 'CONFLICTO'){
+    t.resp = respAnterior; t.estado = estadoAntes; t.historial.pop();
+    _r3AplicarActual('tickets', resultado.actual);
+    saveCache(); renderTickets(); renderDashboard();
+    showToast('⚠ Otra persona modificó el ticket '+codigo+' al mismo tiempo. Se cargó la versión nueva: revisa y vuelve a tomarlo.','error',5000);
   } else {
     showToast('⚠ No se pudo asignar. '+(_MSG_ERR_SERVIDOR[resultado.error]||'Verifica la conexión.'),'error');
   }
@@ -2868,6 +3079,7 @@ function openNuevoTicket(){
 }
 function openEditTicket(codigo){
   const t=tickets.find(x=>x.codigo===codigo);if(!t)return;
+  _r3Abrir('tickets',codigo);
   if(_bloqueadoPorPendienteMob(t)){ closeSheet(); return; }
   _completarHistorialTicketMob(t);
   document.getElementById("modal-title").textContent="Editar ticket";
@@ -3022,7 +3234,7 @@ async function _propagarSolicitudPiezasAlActivo(activoId, entry){
   if(!(await _completarActivoMob(a))) return;
   a.historial = parseHist(a.historial);
   a.historial.push({...entry});
-  await apiPost("activos","update",_payloadMob(a));
+  await _r3Update('activos',a,[]);
 }
 let _mobSaveOverlay = null;
 function mostrarGuardandoMob(mensaje){
@@ -3094,6 +3306,8 @@ async function saveTicket(){
     const estadoAntes=t.estado;
     const respAntes=t.resp;
     const prev={...t, historial:(t.historial||[]).slice()};
+    /* R3: versión y estado de partida = los de cuando se abrió el formulario */
+    const _verAb=_r3VersionAbierta('tickets',editId,t), _baseAb=_r3BaseAbierta('tickets',editId,prev); _r3Cerrar('tickets',editId);
     t.titulo=titulo;
     t.resp=document.getElementById("mt-resp")?.value||t.resp;
     t.tipo=document.getElementById("mt-tipo").value;
@@ -3137,10 +3351,10 @@ async function saveTicket(){
     // El pedido de piezas va de ULTIMO: el backend mira el último evento del
     // historial para decidir si manda el correo al encargado de compras.
     if(solicitudPiezas) t.historial.push(solicitudPiezas);
-    const payload=_payloadMob(t,{_fotosQuitar:_mtFotosQuitar.slice(), _opId:_generarOpId()});
+    const payload=_payloadMob(t,{_fotosQuitar:_mtFotosQuitar.slice(), _opId:_generarOpId(), _version:_verAb});
     _mtFotosQuitar=[];
     t._guardando=true; delete t._errGuardado;
-    _borradoresMob.set('tkt:'+t.codigo,{tipo:'edit',codigo:t.codigo,payload,prev,estadoAntes,motivo,solicitudPiezas,fvClave:'mticket',bor:_borMT});
+    _borradoresMob.set('tkt:'+t.codigo,{tipo:'edit',codigo:t.codigo,payload,prev,base:_baseAb,estadoAntes,motivo,solicitudPiezas,fvClave:'mticket',bor:_borMT});
     closeModal();
     renderTickets(); renderDashboard();
     _enviarTicketMob(t.codigo);
@@ -3214,7 +3428,9 @@ async function _enviarTicketMob(codigo){
   try{
     if(w.tipo==='edit'){
       const res = await apiPostAsync('tickets','update',w.payload,60000);
+      if(res && res.ok===false && res.error==='CONFLICTO'){ _marcarConflictoMob(t,res,'tkt'); return; }
       if(!res || res.ok===false){ _marcarErrorGuardadoMob(t,res,'el ticket '+codigo); return; }
+      _r3AplicarVersion(t,res);
       delete t._guardando; delete t._errGuardado; _borradoresMob.delete('tkt:'+codigo);
       if(w.solicitudPiezas) await _propagarSolicitudPiezasAlActivo(t.activoId, w.solicitudPiezas);
       // Si el ticket de mantenimiento se cerró, el equipo vuelve a estar disponible.
@@ -3278,7 +3494,7 @@ async function _enviarTicketMob(codigo){
             fecha:     ts(), usuario: session.nombre, color: 'amber'
           });
         }
-        await apiPost('activos','update',_payloadMob(act));
+        await _r3Update('activos',act,['estado']);
       }
     }
     // Sin activo vinculado la constancia vive en el ticket. Se manda como
@@ -3414,6 +3630,7 @@ function _mobEaLimpiarBloquesMant(){
 function openEditActivoSheet(codigo){
   const a = activos.find(x=>x.codigo===codigo);
   if(!a){ showToast('Activo no encontrado',''); return; }
+  _r3Abrir('activos',codigo);
   if(_bloqueadoPorPendienteMob(a)){ closeSheet(); return; }
   const modal = document.getElementById('mob-modal-activo');
   if(!modal) return;
@@ -3557,7 +3774,9 @@ async function _enviarActivoMob(codigo){
         }catch(e){}
       }
     }
+    if(res && res.ok===false && res.error==='CONFLICTO'){ _marcarConflictoMob(a,res,'act'); return; }
     if(!res || res.ok===false){ _marcarErrorGuardadoMob(a,res,'el activo'); return; }
+    if(w.tipo!=='insert') _r3AplicarVersion(a,res);
     _borradoresMob.delete('act:'+codigo);
     delete a._guardando; delete a._errGuardado; delete a._temporal;
     const codReal = (w.tipo==='insert' && res.codigo) ? res.codigo : codigo;
@@ -3566,6 +3785,7 @@ async function _enviarActivoMob(codigo){
     // Sin esto, la siguiente edición del mismo activo lo partiría en letras sueltas.
     const rawA = await apiGet('activos');
     if(Array.isArray(rawA) && !rawA._failed && !_listaVaciaSospechosa(rawA, activos)){
+      _r3Anotar('activos', rawA);
       activos = _conservarPendientesMob(_mapActivosMob(rawA), activos);
     }
     saveCache(); renderActivos();
@@ -3818,8 +4038,8 @@ window.addEventListener("offline",()=>{
   setSyncStatus(false);
 });
 if("serviceWorker" in navigator){
-  navigator.serviceWorker.register("sw.js?v=4.4").then(reg=>{
-    console.log("[SAGAE] SW registrado v4.4:", reg.scope);
+  navigator.serviceWorker.register("sw.js?v=4.5").then(reg=>{
+    console.log("[SAGAE] SW registrado v4.5:", reg.scope);
     reg.addEventListener("updatefound", ()=>{
       const newWorker = reg.installing;
       if(!newWorker) return;
@@ -3916,12 +4136,25 @@ async function _ejecutarPollMob(){
   if(!_mobPollingActive || !session) return;
   if(document.hidden){ _programarPollMob(); return; }
   try{
-    const rawT = await apiGet('tickets');
-    if(!Array.isArray(rawT) || _listaVaciaSospechosa(rawT, tickets)){ marcarFalloSync(); _programarPollMob(); return; }
-    setEstadoConexion("ok");   /* v2.4: lectura exitosa = datos al día */
-    const nuevoHash = _mobHash(rawT);
-    if(nuevoHash === _mobTicketHash){ _programarPollMob(); return; }
-    const ticketsNuevos = _conservarPendientesMob(_mapTicketsMob(rawT, tickets), tickets);
+    /* R3: con «hasta» guardado se pide solo lo que cambió; cada 15 min (o al volver tras 15 min oculta) y con un
+       servidor viejo la lectura es completa, como siempre. */
+    const incr = _r3PuedeIncremental('tickets');
+    const rawT = await apiGet('tickets', 1, incr ? '&desde='+encodeURIComponent(_r3Hasta.tickets) : '');
+    let ticketsNuevos, nuevoHash;
+    if(incr && Array.isArray(rawT) && rawT._incr){
+      setEstadoConexion("ok");
+      if(rawT._hasta) _r3Hasta.tickets = rawT._hasta;
+      if(!rawT.length){ _programarPollMob(); return; }   /* nada cambió */
+      ticketsNuevos = _r3Mezclar('tickets', tickets, rawT);
+      nuevoHash = _mobHash(ticketsNuevos);
+    }else{
+      if(!Array.isArray(rawT) || _listaVaciaSospechosa(rawT, tickets)){ marcarFalloSync(); _programarPollMob(); return; }
+      setEstadoConexion("ok");   /* v2.4: lectura exitosa = datos al día */
+      nuevoHash = _mobHash(rawT);
+      if(nuevoHash === _mobTicketHash && !rawT._hasta){ _programarPollMob(); return; }
+      _r3Anotar('tickets', rawT);
+      ticketsNuevos = _conservarPendientesMob(_mapTicketsMob(rawT, tickets), tickets);
+    }
     const codigosAnt = new Set(tickets.map(t=>t.codigo));
     const nuevos = ticketsNuevos.filter(t=>
       !codigosAnt.has(t.codigo) && t.estado!=='eliminado'
@@ -4235,10 +4468,12 @@ async function guardarNuevoActivoMobile(){
     if(editCodigo){
       const prev = {...existente, historial:parseHist(existente.historial).slice()};
       delete prev._errGuardado;
+      const _verAbA=_r3VersionAbierta('activos',editCodigo,existente), _baseAbA=_r3BaseAbierta('activos',editCodigo,prev); _r3Cerrar('activos',editCodigo);
+      envio._version=_verAbA;
       Object.assign(existente, payload);
       existente._guardando = true; delete existente._errGuardado;
       claveLocal = editCodigo;
-      _borradoresMob.set('act:'+claveLocal,{tipo:'edit',codigo:claveLocal,payload:envio,prev,fvClave:'mactivo',bor:_borMA,
+      _borradoresMob.set('act:'+claveLocal,{tipo:'edit',codigo:claveLocal,payload:envio,prev,base:_baseAbA,fvClave:'mactivo',bor:_borMA,
         aud:{accion:'EDITAR',tipo:'Activo',detalle:`Editado desde app móvil${eventosEdicion[0]?.tipo==='Reasignación'?' (reasignación de responsable)':''}`},
         okMsg:'✅ Activo actualizado correctamente'});
     }else{

@@ -344,6 +344,7 @@ tbody tr.clickable{cursor:pointer;}
 .gd-marca{display:inline-block;margin-top:3px;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700;}
 .gd-ok{background:#FEF3C7;color:#92400E;}
 .gd-err{background:#FDE8E8;color:#B42318;cursor:pointer;pointer-events:auto;text-decoration:underline;}
+.gd-conf{background:#FEF3C7;color:#92400E;cursor:pointer;pointer-events:auto;text-decoration:underline;}
 tr.gd-pend,.k-card.gd-pend{pointer-events:none;}
 tr.gd-pend td:last-child,.k-card.gd-pend button{opacity:.35;}
 tr.gd-pend .gd-marca,.k-card.gd-pend .gd-marca{pointer-events:auto;}
@@ -2578,10 +2579,220 @@ function _generarOpId(){
   return 'op'+Date.now().toString(36)+_aleatorioHex(8);
 }
 
+// ════════════════════════════════════════════════════════════════════
+// R3 · VARIOS TÉCNICOS A LA VEZ (versión por registro, conflictos, lectura incremental)
+//  · Cada registro en memoria lleva `_version` y `actualizado` (los pone el servidor v13). Todo update
+//    viaja con la `_version` que la persona leyó; si otra persona guardó antes, el servidor responde
+//    CONFLICTO con el registro actual y la fila pasa a «⚠ Conflicto · Resolver».
+//  · Lectura incremental: la primera carga pide &conHasta=1 y los sondeos piden &desde=<hasta>.
+//    Un servidor viejo no manda `_version` ni `hasta`: todo sigue como antes (lectura completa, sin control).
+// ════════════════════════════════════════════════════════════════════
+const _R3_HOJAS = ['activos','mobiliario','licencias','tickets','personas','espacios','departamentos'];
+const _R3_COMPLETA_MS = 15*60*1000;               // recarga completa de seguridad
+const _R3_NO_CAMPO = ['id','actualizado','historial','fotos','foto','instalaciones']; // historial y fotos se unen en el servidor
+const _r3Hasta = {};      // hoja → «hasta» que devolvió el servidor en la última lectura aplicada
+const _r3Completa = {};   // hoja → ms de la última lectura completa aplicada
+const _r3Abierto = {};    // 'hoja:codigo' → {version, base} al abrir el formulario de edición
+let _r3OcultoDesde = 0;
+document.addEventListener('visibilitychange', ()=>{
+  if(document.hidden){ _r3OcultoDesde = Date.now(); return; }
+  // volver a la pestaña tras más de 15 min oculta: el próximo sondeo es completo
+  if(_r3OcultoDesde && Date.now()-_r3OcultoDesde > _R3_COMPLETA_MS) Object.keys(_r3Hasta).forEach(k=>{ delete _r3Hasta[k]; });
+  _r3OcultoDesde = 0;
+});
+function _r3Lista(h){
+  return h==='tickets'?tickets : h==='activos'?activos : h==='mobiliario'?mobiliario : h==='licencias'?licencias
+       : h==='personas'?personas : h==='espacios'?espacios : h==='departamentos'?departamentos : null;
+}
+// Misma conversión que hace la carga inicial de cada hoja
+function _r3Norm(h, r){
+  const o = {...r};
+  if(h==='activos'){ o.id=r.codigo; o.valor=parseFloat(r.valor)||0; o.vida=parseInt(r.vida)||3; o.historial=parseHist(r.historial); }
+  else if(h==='tickets'){ o.id=r.codigo; o.avance=parseInt(r.avance)||0; o.historial=parseHist(r.historial); }
+  else if(h==='mobiliario'){ o.cantidad=parseInt(r.cantidad)||1; o.valor=parseFloat(r.valor)||0; o.historial=parseHist(r.historial); }
+  else if(h==='licencias'){ o.costoAnual=parseFloat(r.costoAnual)||0; o.cantidadTotal=parseInt(r.cantidadTotal)||0; o.instalaciones=parseHist(r.instalaciones); o.historial=parseHist(r.historial); }
+  return o;
+}
+function _r3Buscar(h, p){
+  const l = _r3Lista(h); if(!Array.isArray(l) || !p || p.codigo==null) return null;
+  return l.find(x=>x && x.codigo===p.codigo) || null;
+}
+function _r3AplicarVersion(reg, res){
+  if(!reg || !res || typeof res!=='object') return;
+  if(res._version!=null) reg._version = res._version;
+  if(res.actualizado) reg.actualizado = res.actualizado;
+}
+// Registro con envío sin confirmar (guardando, error o conflicto): una lectura del servidor no lo pisa
+function _r3Pendiente(x){ return !!(x && (x._estadoGuardado || (x._pendKey && _pend.has(x._pendKey)))); }
+// Aplica los `items` de una lectura incremental sobre la lista y devuelve una lista NUEVA
+function _r3Mezclar(h, lista, items){
+  const res = lista.slice();
+  items.forEach(r=>{
+    if(!r || !r.codigo) return;
+    const i = res.findIndex(x=>x && x.codigo===r.codigo);
+    if(i>=0 && _r3Pendiente(res[i])) return;
+    const n = _r3Norm(h, r);
+    if(i>=0) res[i]=n; else res.push(n);
+  });
+  return res;
+}
+// Guarda el «hasta» de una lectura completa que YA se aplicó a la lista (si el servidor es viejo no hay hasta)
+function _r3Anotar(h, raw){
+  if(!_R3_HOJAS.includes(h) || !raw) return;
+  if(raw._hasta){ _r3Hasta[h]=raw._hasta; _r3Completa[h]=Date.now(); }
+  else { delete _r3Hasta[h]; delete _r3Completa[h]; }
+}
+function _r3PuedeIncremental(h){ return !!_r3Hasta[h] && (Date.now()-(_r3Completa[h]||0)) < _R3_COMPLETA_MS; }
+// Al abrir un formulario de edición se recuerda la versión y el estado de partida
+function _r3Abrir(h, codigo){
+  const r = (_r3Lista(h)||[]).find(x=>x && x.codigo===codigo);
+  if(r) _r3Abierto[h+':'+codigo] = {version:r._version, base:{...r}};
+}
+function _r3VersionAbierta(h, codigo, reg){ const a=_r3Abierto[h+':'+codigo]; return a ? a.version : (reg&&reg._version); }
+function _r3BaseAbierta(h, codigo, porDefecto){ const a=_r3Abierto[h+':'+codigo]; return a ? a.base : porDefecto; }
+function _r3Cerrar(h, codigo){ delete _r3Abierto[h+':'+codigo]; }
+// Pone la versión nueva del servidor en lugar del registro de la lista (si no tiene envío pendiente)
+function _r3AplicarActual(h, actual){
+  const l = _r3Lista(h); if(!actual || !actual.codigo || !Array.isArray(l)) return;
+  const i = l.findIndex(x=>x && x.codigo===actual.codigo);
+  if(i>=0 && _r3Pendiente(l[i])) return;
+  const n = _r3Norm(h, actual);
+  if(i>=0) l[i]=n; else l.push(n);
+}
+// Update de una hoja con versión, leyendo la respuesta (aplica la versión nueva, avisa si falla).
+// `campos` (arreglo) = campos que este cambio quiere dejar fijos: si hay CONFLICTO se reaplican sobre la versión
+// actual del servidor (el historial se une) y se reenvía una vez. Sin `campos` el conflicto solo se avisa.
+async function _r3Update(h, reg, campos){
+  if(!_isOnline) return apiPost(h,'update',reg);
+  let res = await apiPostAsync(h,'update',reg,60000);
+  if(res && res.ok===false && res.error==='CONFLICTO' && Array.isArray(campos) && res.actual){
+    const act = res.actual, m = {...act};
+    campos.forEach(k=>{ m[k]=reg[k]; });
+    m.historial = _r3UnirHist(act.historial, reg.historial); m._version = act._version; delete m.actualizado;
+    res = await apiPostAsync(h,'update',m,60000);
+    if(res && res.ok){
+      Object.keys(act).forEach(k=>{ if(k.charAt(0)!=='_' && !_R3_NO_CAMPO.includes(k) && !campos.includes(k)) reg[k]=act[k]; });
+      reg.historial = m.historial; _r3AplicarVersion(reg, res);
+    }
+  }
+  if(!res || res.ok===false){
+    if(res && res.error==='CONFLICTO'){
+      _r3AplicarActual(h, res.actual);
+      showToast('⚠ Otra persona modificó '+(reg.codigo||'el registro')+' al mismo tiempo. Se cargó la versión nueva: revisa y repite tu cambio.','error');
+    }else showToast('⚠ No se guardó el cambio en '+(reg.codigo||h)+': '+_impMotivo(res),'error');
+  }
+  return res;
+}
+async function _r3UpdateLote(pares){ // [[hoja, registro, campos], …] de 3 en 3, para no saturar el servidor
+  for(let i=0;i<pares.length;i+=3) await Promise.all(pares.slice(i,i+3).map(p=>_r3Update(p[0],p[1],p[2])));
+}
+// Campos (no internos) cuyo valor difiere entre dos copias
+function _r3Igual(a,b){ const f=v=>v==null?'':(typeof v==='object'?JSON.stringify(v):String(v)); return f(a)===f(b); }
+function _r3Diff(a, b){
+  a=a||{}; b=b||{}; const out=[];
+  new Set([...Object.keys(a),...Object.keys(b)]).forEach(k=>{
+    if(k.charAt(0)==='_' || _R3_NO_CAMPO.includes(k)) return;
+    if(!_r3Igual(a[k],b[k])) out.push(k);
+  });
+  return out;
+}
+function _r3UnirHist(a, b){
+  const ya=parseHist(a), vistos=new Set(ya.map(x=>JSON.stringify(x)));
+  return ya.concat(parseHist(b).filter(x=>!vistos.has(JSON.stringify(x))));
+}
+// Cambios de la persona (contra lo que leyó) sobre la versión actual del servidor
+function _r3Combinar(e){
+  const act = e.conflicto.actual, payload = e.payload || _limpiarReg(e.registro);
+  const base = (e.op && e.op.base) || null;
+  const mios = base ? _r3Diff(payload, base) : _r3Diff(payload, act); // sin base, lo disputado lo gana la persona
+  const otros = (e.conflicto.campos && e.conflicto.campos.length) ? e.conflicto.campos : (base ? _r3Diff(act, base) : []);
+  const m = {...payload};
+  Object.keys(act).forEach(k=>{
+    if(k.charAt(0)==='_' || _R3_NO_CAMPO.includes(k)) return;
+    if(!mios.includes(k)) m[k] = act[k];
+  });
+  m._version = act._version; delete m.actualizado;
+  return {payload:m, mios, otros};
+}
+async function _r3TraerActual(h, codigo){
+  if(h==='tickets') return await apiGetTicketDetail(codigo);
+  const raw = await apiGet(h);
+  return (Array.isArray(raw) && !raw._failed) ? (raw.find(x=>x && x.codigo===codigo)||null) : null;
+}
+function _r3TxtValor(v){ return (v==null||v==='') ? '—' : (typeof v==='object' ? JSON.stringify(v) : String(v)); }
+async function resolverConflicto(key){
+  const e = _pend.get(key); if(!e || e.estado!=='conflicto') return;
+  if(!e.conflicto || !e.conflicto.actual){
+    const act = await _r3TraerActual(e.hoja, e.registro.codigo);
+    if(!act){ showToast('No se pudo traer la versión actual del servidor. Intenta de nuevo.','error'); return; }
+    e.conflicto = {actual:act, campos:(e.conflicto&&e.conflicto.campos)||[]};
+  }
+  const c = _r3Combinar(e), act = e.conflicto.actual;
+  let bg = document.getElementById('mod-conflicto');
+  if(!bg){ bg = document.createElement('div'); bg.className='modal-bg'; bg.id='mod-conflicto'; document.body.appendChild(bg); }
+  const campos = [...c.mios, ...c.otros.filter(k=>!c.mios.includes(k) && !_R3_NO_CAMPO.includes(k) && k.charAt(0)!=='_')];
+  const filas = campos.map(k=>{
+    const otra = c.otros.includes(k);
+    return '<tr'+(otra?' style="background:#FEF08A" class="cf-otra"':'')+'><td style="padding:5px 8px;font-weight:700">'+_escHtml(k)+(otra?' ⚠':'')+'</td>'
+      +'<td style="padding:5px 8px">'+_escHtml(_r3TxtValor(act[k]))+'</td>'
+      +'<td style="padding:5px 8px">'+(c.mios.includes(k)?_escHtml(_r3TxtValor((e.payload||e.registro)[k])):'<span style="color:var(--text3)">(no lo cambiaste)</span>')+'</td></tr>';
+  }).join('');
+  bg.innerHTML = '<div class="modal" style="max-width:680px;" role="dialog" aria-label="Conflicto de edición">'
+    +'<div class="modal-title"><span>⚠ Otra persona modificó este registro</span><button class="modal-close" onclick="closeModals()">✕</button></div>'
+    +'<p style="font-size:12px;margin:0 0 8px">Mientras editabas <b>'+_escHtml(e.registro.codigo||'')+'</b> otra persona guardó cambios. Abajo está el registro actual del servidor y, a la derecha, tus cambios. '
+    +'Los campos en amarillo son los que la otra persona cambió.</p>'
+    +'<div style="max-height:46vh;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="text-align:left;border-bottom:1px solid var(--border,#ddd)"><th style="padding:5px 8px">Campo</th><th style="padding:5px 8px">Versión actual (servidor)</th><th style="padding:5px 8px">Tus cambios</th></tr></thead><tbody>'
+    +(filas || '<tr><td colspan="3" style="padding:8px;color:var(--text3)">Solo cambia el historial o las fotos, que se unen sin perder nada.</td></tr>')
+    +'</tbody></table></div>'
+    +'<p style="font-size:11px;color:var(--text3);margin:8px 0 0">El historial y las fotos de ambas personas se unen: no se pierde ningún evento.</p>'
+    +'<div class="modal-actions"><button class="btn" id="cf-descartar" onclick="_r3ConflictoDescartar(\''+_jsArg(key)+'\')">Descartar mis cambios</button>'
+    +'<button class="btn btn-p" id="cf-guardar" onclick="_r3ConflictoGuardar(\''+_jsArg(key)+'\')">Guardar mis cambios sobre la versión nueva</button></div></div>';
+  bg.classList.add('open');
+}
+function _r3ConflictoGuardar(key){
+  const e = _pend.get(key); if(!e || e.estado!=='conflicto' || !e.conflicto || !e.conflicto.actual) return;
+  const c = _r3Combinar(e), act = e.conflicto.actual, reg = e.registro;
+  e.payload = c.payload; e.opId = _generarOpId(); e.conflicto = null;
+  // lo que se ve en pantalla: la versión nueva con los cambios de la persona encima y los historiales unidos
+  const mem = _r3Norm(e.hoja, {...c.payload, historial:_r3UnirHist(act.historial, c.payload.historial)});
+  Object.keys(mem).forEach(k=>{ if(k==='_estadoGuardado'||k==='_pendKey') return; if(k.charAt(0)==='_' && k!=='_version') return; reg[k]=mem[k]; });
+  closeModals();
+  _enviarPend(e);
+}
+function _r3ConflictoDescartar(key){
+  const e = _pend.get(key); if(!e) return;
+  const act = e.conflicto && e.conflicto.actual;
+  _pend.delete(key);
+  e.registros.forEach(r=>{ delete r._estadoGuardado; delete r._pendKey; });
+  if(act){
+    const l = _r3Lista(e.hoja), n = _r3Norm(e.hoja, act);
+    let i = l.indexOf(e.registro); if(i<0) i = l.findIndex(x=>x && x.codigo===e.registro.codigo);
+    if(i>=0) l[i]=n; else l.push(n);
+    if(e.hoja==='activos' && activoActual && activoActual.codigo===n.codigo) activoActual = n;
+  }
+  closeModals(); _pendBarra(); renderSolo(e.op.vistas);
+  showToast('Se descartaron tus cambios: queda la versión de la otra persona.','');
+}
+
+// Antes de enviar: nunca se manda `actualizado` (lo escribe el servidor) y un update sin `_version` toma la del registro en memoria
+function _r3PrepararEnvio(sheet, action, secure, original){
+  delete secure.actualizado;
+  if(action==='update' && secure._version===undefined && _R3_HOJAS.includes(sheet)){
+    const r = _r3Buscar(sheet, secure);
+    if(r && r._version!=null) secure._version = r._version;
+  }
+}
+// Respuesta de un insert/update confirmado: la versión nueva queda en el registro en memoria
+function _r3AplicarRespuesta(sheet, action, original, res){
+  if(!res || res.ok!==true || !_R3_HOJAS.includes(sheet) || (action!=='update' && action!=='insert')) return;
+  _r3AplicarVersion(_r3Buscar(sheet, original), res);
+  if(original && typeof original==='object') _r3AplicarVersion(original, res);
+}
 async function apiPost(sheet,action,payload){
   // uploadFoto no necesita sheet
   const securePayload = {...(payload||{}), _apiToken: API_TOKEN, _sessionToken: session?session.token:null,
                          _opId: (payload&&payload._opId) || _generarOpId()};
+  _r3PrepararEnvio(sheet,action,securePayload,payload);
   const body = JSON.stringify({sheet,action,payload:securePayload});
   try{
 
@@ -2692,11 +2903,13 @@ async function apiGet(sheet, intento=1, params=''){
     // Tickets en modo ligero: historial recortado (primer evento + últimos 4)
     // y sin las fotos de los eventos. El detalle se pide al abrir el ticket.
     const modoLigero = (sheet === 'tickets' && !params.includes('mode=')) ? '&mode=light' : '';
+    // R3: la lectura completa pide también el «hasta» del servidor (un servidor viejo lo ignora y manda el arreglo de siempre)
+    const conHasta = (_R3_HOJAS.includes(sheet) && !params.includes('desde=')) ? '&conHasta=1' : '';
     const controller = new AbortController();
     const timeoutMs = 25000;
     const timer = setTimeout(()=>controller.abort(), timeoutMs);
     const tok = session && session.token ? '&session='+encodeURIComponent(session.token) : '';
-    const r = await fetch(API+'?sheet='+sheet+tok+modoLigero+params+'&t='+Date.now(), {mode:'cors', signal:controller.signal});
+    const r = await fetch(API+'?sheet='+sheet+tok+modoLigero+conHasta+params+'&t='+Date.now(), {mode:'cors', signal:controller.signal});
     clearTimeout(timer);
     if(!r.ok) throw new Error('HTTP '+r.status);
     const d = await r.json();
@@ -2711,6 +2924,10 @@ async function apiGet(sheet, intento=1, params=''){
     if(d && d.ok===false && d.error==='TERMINOS_PENDIENTES'){
       _mostrarTerminos(null,()=>{ loadFromSheets().then(()=>{ try{renderAll();}catch(e){} }); });
       return [];
+    }
+    // R3: respuesta nueva {ok, items, hasta, completo}: se devuelve la lista con marcas (_hasta, _incr)
+    if(d && d.ok===true && Array.isArray(d.items)){
+      const arr = d.items.slice(); arr._hasta = d.hasta||''; arr._incr = (d.completo===false); return arr;
     }
     return Array.isArray(d) ? d : [];
   }
@@ -2791,6 +3008,7 @@ async function apiPostAsync(sheet, action, payload, timeoutMs=60000){
   const securePayload = {...(payload||{}), _apiToken: API_TOKEN, _requestId: requestId,
                          _sessionToken: session?session.token:null,
                          _opId: (payload&&payload._opId) || _generarOpId()};
+  _r3PrepararEnvio(sheet,action,securePayload,payload);
   fetch(API, {
     method:'POST', mode:'no-cors',
     headers:{'Content-Type':'application/json'},
@@ -2813,7 +3031,7 @@ async function apiPostAsync(sheet, action, payload, timeoutMs=60000){
         const d = await r.json();
         if(d && d.error==='CAMBIO_PASSWORD_OBLIGATORIO' && action!=='cambiar_mi_password') _forzarCambioPass();
         if(d && d.error==='TERMINOS_PENDIENTES' && action!=='aceptar_terminos') _mostrarTerminos();
-        if(d && !d.pending) return d;
+        if(d && !d.pending){ _r3AplicarRespuesta(sheet,action,payload,d); return d; }
       }
     }catch(e){ /* seguir intentando hasta agotar el tiempo */ }
     await new Promise(r=>setTimeout(r, intervalo));
@@ -2871,7 +3089,7 @@ function _pushHistorialItem(tipo, codigo, evento){
   if(!item) return;
   item.historial = parseHist(item.historial);
   item.historial.push(evento);
-  apiPost(tipo==='mobiliario'?'mobiliario':'activos','update',item);
+  _r3Update(tipo==='mobiliario'?'mobiliario':'activos', item, []).catch(()=>{});
 }
 
 function registrarEventoEtiqueta(tipo, codigo){
@@ -3147,6 +3365,7 @@ async function loadFromSheets(){
   activos  = rawA.map(r=>({...r,id:r.codigo,valor:parseFloat(r.valor)||0,vida:parseInt(r.vida)||3,historial:parseHist(r.historial)}));
   cntActivos = activos.length;
   tickets  = rawT.map(r=>({...r,id:r.codigo,avance:parseInt(r.avance)||0,historial:parseHist(r.historial)}));
+  _r3Anotar('activos',rawA); _r3Anotar('tickets',rawT);
   _reinyectarPendientes('activos'); _reinyectarPendientes('tickets'); // una fila «Guardando…»/«No se guardó» no desaparece con una recarga
   cntTickets = tickets.length;
   _cargaInicial = false;
@@ -3208,6 +3427,7 @@ async function _cargarDatosSecundarios(){
       ...r, cantidad:parseInt(r.cantidad)||1, valor:parseFloat(r.valor)||0, historial:parseHist(r.historial)
     })) : [];
     _reinyectarPendientes('mobiliario');
+    _r3Anotar('mobiliario',rawMob0); _r3Anotar('licencias',rawLic0); _r3Anotar('personas',rawPer0); _r3Anotar('espacios',rawEsp0); _r3Anotar('departamentos',rawDep0);
     licencias = Array.isArray(rawLic0) ? rawLic0.map(r=>({
       ...r, costoAnual:parseFloat(r.costoAnual)||0, cantidadTotal:parseInt(r.cantidadTotal)||0,
       instalaciones: parseHist(r.instalaciones), historial: parseHist(r.historial)
@@ -4052,6 +4272,7 @@ function _eaActualizarBloquesMant(){
 
 function openActivo(id){
   const isEdit=id!=null;
+  if(isEdit) _r3Abrir('activos',id);
   // Poblar todos los selects (depto, espacios, personas)
   buildDataLists();
   // Poblar select de personas
@@ -4193,6 +4414,7 @@ async function saveActivo(){
     const a=activos.find(x=>x.codigo===editId);if(!a)return;
     if(a._estadoGuardado){showToast('Este activo tiene un guardado pendiente. Espera la confirmación o usa «Reintentar» en su fila.','');return;}
     const _snapAct={...a, historial:(a.historial||[]).slice()};
+    const _verAbA=_r3VersionAbierta('activos',editId,a), _baseAbA=_r3BaseAbierta('activos',editId,_snapAct); _r3Cerrar('activos',editId);
     const cambios=[];
     // Guardar asignado y depto ANTES de aplicar cambios para detectar reasignación
     const _asignadoAntes = a.asignado||'—';
@@ -4277,9 +4499,9 @@ async function saveActivo(){
 
     // Guardado optimista: los cambios ya están aplicados en memoria; la fila muestra "Guardando…"
     guardarOptimista('activos', a, {
-      accion:'update', nombre:a.codigo, key:'edit-act-'+a.codigo, vistas:['activos','dashboard'],
+      accion:'update', nombre:a.codigo, key:'edit-act-'+a.codigo, vistas:['activos','dashboard'], base:_baseAbA,
       fvClave:'activo', borrador:_borAct, revertir:()=>Object.assign(a,_snapAct), reabrir:()=>openActivo(a.codigo),
-      payload:()=>_limpiarReg(a),
+      payload:()=>({..._limpiarReg(a), _version:_verAbA}),
       alConfirmar: async(res)=>{
         audit('EDITAR','Activo',a.codigo,det);
         if(res && res._cola) showToast('⚠ Sin conexión: los cambios de '+a.codigo+' quedaron en cola y se enviarán solos.','error');
@@ -4305,6 +4527,7 @@ async function saveActivo(){
         const raw = await apiGet('activos');
         if(Array.isArray(raw) && !raw._failed){
           activos = raw.map(r=>({...r,id:r.codigo,valor:parseFloat(r.valor)||0,vida:parseInt(r.vida)||3,historial:parseHist(r.historial)}));
+          _r3Anotar('activos',raw);
           if(conservarPend) _reinyectarPendientes('activos');
           cntActivos = activos.length;
           return true;
@@ -4381,16 +4604,11 @@ async function apiPostConRespuesta(sheet, action, payload){
       }
     }catch(e){ /* si falla el check, continuar — el servidor valida igual */ }
   }
-  // POST siempre con no-cors (Apps Script no soporta CORS preflight en POST)
+  // R3: se envía con apiPostAsync (POST + consulta del resultado por GET) para LEER la respuesta real:
+  // «ya lo tomó otra persona», CONFLICTO de versión y la versión nueva del registro.
   try{
-    const securePayload = {...(payload||{}), _apiToken: API_TOKEN, _sessionToken: session?session.token:null};
-    await fetch(API, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({sheet, action, payload: securePayload})
-    });
-    return {ok: true};
+    if(!_isOnline) return {ok:false, error:'OFFLINE', message:'Sin conexión.'};
+    return await apiPostAsync(sheet, action, payload, 60000);
   } catch(e){
     return {ok: false, error: e.message};
   }
@@ -4452,6 +4670,7 @@ async function tomarTicket(codigo){
 
   // Usar POST con respuesta para detectar si alguien llegó primero
   const resultado = await apiPostConRespuesta('tickets','update',t);
+  delete t._isTakeTicket; delete t._respEsperado; // banderas de un solo uso
   audit('EDITAR','Ticket',codigo,
     `Ticket tomado por ${session.nombre}. Resp. anterior: ${respAnterior}. Estado: ${estadoAntes}→${t.estado}`);
 
@@ -4465,6 +4684,12 @@ async function tomarTicket(codigo){
     t.estado = estadoAntes;
     renderAll();
     showToast('⚠ '+resultado.takenBy+' tomó este ticket justo antes que tú.','error');
+  } else if(resultado.error === 'CONFLICTO'){
+    // R3: otra persona cambió el ticket mientras tanto — se muestra la versión nueva y se deja decidir de nuevo
+    t.resp = respAnterior; t.estado = estadoAntes; t.historial.pop();
+    _r3AplicarActual('tickets', resultado.actual);
+    renderAll();
+    showToast('⚠ Otra persona modificó el ticket '+codigo+' al mismo tiempo. Se cargó la versión nueva: revisa y vuelve a tomarlo.','error');
   } else {
     showToast('⚠ No se pudo guardar. '+(_MSG_ERR_SERVIDOR[resultado.error]||'Verifica tu conexión.'),'error');
   }
@@ -4603,6 +4828,7 @@ function toggleSolicitudPiezasTicket(checked){
 
 function openTicket(id,forceReadOnly){
   const isEdit=id!=null;
+  if(isEdit && !forceReadOnly) _r3Abrir('tickets',id);
   const per=PERMS[session.rol]||{};
   // Defensa en profundidad: aunque el botón de edición esté oculto en la UI para roles sin
   // permiso, la función también rechaza abrir en modo edición si el rol no puede editar.
@@ -4903,6 +5129,8 @@ function _pendBarra(){
 // Marca visible dentro de una fila o tarjeta
 function _marcaGuardado(it){
   if(!it || !it._estadoGuardado) return '';
+  if(it._estadoGuardado==='conflicto')
+    return '<span class="gd-marca gd-conf" role="button" tabindex="0" title="Otra persona modificó este registro. Toca para resolver." onclick="event.stopPropagation();resolverConflicto(\''+_jsArg(it._pendKey)+'\')">⚠ Conflicto · Resolver</span>';
   if(it._estadoGuardado==='error')
     return '<span class="gd-marca gd-err" role="button" tabindex="0" title="El borrador se conserva. Toca para reintentar." onclick="event.stopPropagation();reintentarGuardado(\''+_jsArg(it._pendKey)+'\')">⚠ No se guardó · '+((_pend.get(it._pendKey)||{}).ultimoError==='VALIDACION'?'Corregir':'Reintentar')+'</span>';
   return '<span class="gd-marca gd-ok">⏳ Guardando…</span>';
@@ -4977,6 +5205,15 @@ async function _enviarPend(e){
     }
   }catch(err){ res = {ok:false, message:(err&&err.message)||'error inesperado'}; }
   e.enviando = false;
+  if(res && res.ok===false && res.error==='CONFLICTO'){
+    // R3: otra persona guardó antes. No se reintenta a ciegas: la fila queda «Conflicto · Resolver».
+    e.ultimoError = 'CONFLICTO';
+    e.conflicto = {actual:(res.actual&&typeof res.actual==='object')?res.actual:null, campos:Array.isArray(res.campos)?res.campos:[]};
+    _pendMarcar(e,'conflicto');
+    showToast('⚠ Otra persona modificó '+(e.op.nombre||'este registro')+' mientras lo editabas. Toca «Conflicto · Resolver» en la fila.','error');
+    _pendBarra(); renderSolo(e.op.vistas);
+    return;
+  }
   if(!res || res.ok===false){
     e.ultimoError = (res&&res.error)||'';
     _pendMarcar(e,'error');
@@ -4994,6 +5231,7 @@ async function _enviarPend(e){
   }
   _pend.delete(e.key);
   e.registros.forEach(r=>{ delete r._estadoGuardado; delete r._pendKey; });
+  if(e.registros.length===1) _r3AplicarVersion(e.registros[0], res); // R3: versión nueva del servidor
   e.estado = 'ok';
   _pendBarra();
   try{ if(e.op.alConfirmar) await e.op.alConfirmar(res,e); }
@@ -5113,6 +5351,8 @@ function saveTicket(){
       // Valores ANTES del cambio, para el historial
       const ant = {estado:t.estado, avance:t.avance||0, resp:t.resp||'—'};
       const _snapT={...t, historial:Array.isArray(t.historial)?t.historial.slice():t.historial};
+      // R3: versión y estado de partida = los de cuando se abrió el formulario (un sondeo pudo traer una versión más nueva)
+      const _verAb=_r3VersionAbierta('tickets',editId,t), _baseAb=_r3BaseAbierta('tickets',editId,_snapT); _r3Cerrar('tickets',editId);
       const cambios=[];
       if(t.titulo!==titulo)cambios.push(`Título:"${t.titulo}"→"${titulo}"`);if(t.resp!==f.resp)cambios.push(`Responsable:"${t.resp}"→"${f.resp}"`);
       // Se aplica en memoria ya: la fila muestra el cambio con la marca "Guardando…"
@@ -5120,7 +5360,7 @@ function saveTicket(){
       t.dead=f.dead;t.proy=f.proy;t.desc=f.desc;t.fotos=f.fotosJson;t.foto=f.foto;
       const det=`Motivo: ${motivo}. ${cambios.length?'Cambios: '+cambios.join('; '):''}`;
       guardarOptimista('tickets', t, {
-        accion:'update', nombre:t.codigo, key:'edit-'+t.codigo, vistas:['tickets','kanban','dashboard'],
+        accion:'update', nombre:t.codigo, key:'edit-'+t.codigo, vistas:['tickets','kanban','dashboard'], base:_baseAb,
         fvClave:'ticket', borrador:_borT, revertir:()=>{ Object.assign(t,_snapT); },
         reabrir:()=>{ openTicket(t.codigo); _etFotosQuitar=_quitarBor.slice(); _renderGaleriaFotosAdmin(_fotosBor); },
         preparar: async()=>{
@@ -5172,7 +5412,7 @@ function saveTicket(){
           }
           return {ok:true};
         },
-        payload: ()=>({..._limpiarReg(t), _fotosQuitar:f.quitar}),
+        payload: ()=>({..._limpiarReg(t), _fotosQuitar:f.quitar, _version:_verAb}),
         alConfirmar: async(res)=>{
           audit('EDITAR','Ticket',t.codigo,det);
           if(res && res._cola) showToast('⚠ Sin conexión: los cambios de '+t.codigo+' quedaron en cola y se enviarán solos.','error');
@@ -5245,7 +5485,7 @@ function saveTicket(){
                   fecha:     ts(), usuario: session.nombre, color: 'amber'
                 });
               }
-              await apiPost('activos','update',act);
+              await _r3Update('activos',act,['estado']);
               renderSolo(['activos','dashboard']);
             }
           }
@@ -5277,7 +5517,7 @@ function saveTicket(){
           }
           if(evTicket.length){
             t.historial = (t.historial||[]).concat(evTicket);
-            await apiPost('tickets','update',_limpiarReg(t));
+            await _r3Update('tickets',_limpiarReg(t),[]);
           }
           audit('CREAR','Ticket',codigoReal,'Creado: '+titulo);
         }
@@ -5309,6 +5549,7 @@ async function recargarTickets(conservarPend=true){
     const raw = await apiGet('tickets');
     if(Array.isArray(raw) && !raw._failed){
       tickets = raw.map(r=>({...r, id:r.codigo, avance:parseInt(r.avance)||0, historial:parseHist(r.historial)}));
+      _r3Anotar('tickets',raw);
       if(conservarPend) _reinyectarPendientes('tickets');
       renderAll();
     }
@@ -5462,7 +5703,7 @@ async function saveMant(){
     activoActual.historial.push(e);
   }
 
-  await apiPost('activos','update',activoActual);
+  await _r3Update('activos',activoActual,['estado']);
   audit('CREAR','Mantenimiento',activoActual.codigo,`${e.tipo}: ${e.desc} | Técnico: ${e.tec}`);
 
   // Resetear campos del modal
@@ -8548,7 +8789,8 @@ const _MSG_ERR_SERVIDOR={
   HISTORIAL_GUARDADO_DANADO:'El historial de este registro está dañado; avisa al administrador.',
   HISTORIAL_LLENO:'El historial de este registro llegó a su límite; avisa al administrador.',
   VALIDACION:'Revisa los campos marcados.',
-  CONSENTIMIENTO_REQUERIDO:'Debes aceptar el Aviso de Privacidad para enviar el reporte.'
+  CONSENTIMIENTO_REQUERIDO:'Debes aceptar el Aviso de Privacidad para enviar el reporte.',
+  CONFLICTO:'Otra persona modificó este registro mientras lo editabas. Se cargó la versión nueva: revisa y vuelve a guardar tus cambios.'
 };
 function _impMotivo(res){
   if(!res) return 'sin respuesta del servidor';
@@ -8565,6 +8807,7 @@ async function _guardarConfirmado(sheet, action, obj){
   if(!_isOnline) return apiPost(sheet, action, obj);
   const res = await apiPostAsync(sheet, action, obj);
   if(res && res.error==='VALIDACION' && fvServidorPorHoja(sheet, res.campos)) throw new Error(_MSG_ERR_SERVIDOR.VALIDACION);
+  if(res && res.error==='CONFLICTO') _r3AplicarActual(sheet, res.actual); // R3: queda en pantalla la versión nueva del servidor
   if(!res || !res.ok) throw new Error(_impMotivo(res));
   return res;
 }
@@ -10061,19 +10304,31 @@ async function _ejecutarPoll(){
 
   try{
     // Solo consultar tickets — es el dato más dinámico
-    const rawT = await apiGet('tickets');
-    if(!Array.isArray(rawT) || !rawT.length){ _programarSiguientePoll(); return; }
-
-    const newHash = _ticketHash(rawT);
-    if(newHash === _lastTicketHash){
-      // Sin cambios — reprogramar
-      _programarSiguientePoll();
-      return;
+    // R3: con «hasta» guardado se pide solo lo que cambió desde entonces; cada 15 min (o al volver tras
+    // 15 min oculta) y con un servidor viejo la lectura es completa, como siempre.
+    const incr = _r3PuedeIncremental('tickets');
+    const rawT = await apiGet('tickets', 1, incr ? '&desde='+encodeURIComponent(_r3Hasta.tickets) : '');
+    if(rawT._failed){ _programarSiguientePoll(); return; }
+    let newTickets, newHash;
+    if(incr && rawT._incr){
+      if(rawT._hasta) _r3Hasta.tickets = rawT._hasta;
+      if(!rawT.length){ _programarSiguientePoll(); return; } // nada cambió
+      newTickets = _r3Mezclar('tickets', tickets, rawT);
+      newHash = _ticketHash(newTickets);
+    }else{
+      if(!Array.isArray(rawT) || !rawT.length){ _programarSiguientePoll(); return; }
+      newHash = _ticketHash(rawT);
+      if(newHash === _lastTicketHash && !rawT._hasta){
+        // Sin cambios — reprogramar
+        _programarSiguientePoll();
+        return;
+      }
+      _r3Anotar('tickets', rawT);
+      newTickets = rawT.map(r=>({...r, id:r.codigo,
+        avance:parseInt(r.avance)||0, historial:parseHist(r.historial)}));
     }
 
     // ── HAY CAMBIOS ──────────────────────────────────────────────
-    const newTickets = rawT.map(r=>({...r, id:r.codigo,
-      avance:parseInt(r.avance)||0, historial:parseHist(r.historial)}));
 
     // Detectar tickets verdaderamente nuevos (no en la lista actual)
     const codigosActuales = new Set(tickets.map(t=>t.codigo));
@@ -10287,6 +10542,7 @@ async function _mobRecargar(conservarPend=true){
     const raw = await apiGet('mobiliario');
     if(Array.isArray(raw) && !raw._failed){
       mobiliario = raw.map(r=>({...r,cantidad:parseInt(r.cantidad)||1,valor:parseFloat(r.valor)||0,historial:parseHist(r.historial)}));
+      _r3Anotar('mobiliario',raw);
       if(conservarPend) _reinyectarPendientes('mobiliario');
       return true;
     }
@@ -10298,6 +10554,7 @@ async function _mobRecargar(conservarPend=true){
 function openMob(codigo){
   buildDataLists();
   const isEdit = !!codigo;
+  if(isEdit) _r3Abrir('mobiliario',codigo);
   document.getElementById('mod-mob-title').textContent = isEdit ? 'Editar elemento' : 'Nuevo elemento de mobiliario';
   const m = isEdit ? mobiliario.find(x=>x.codigo===codigo) : {};
   document.getElementById('mob-nombre').value    = m.nombre||'';
@@ -10406,12 +10663,13 @@ async function guardarMobiliario(){
       const historial = [...parseHist(prev.historial), {tipo:'Edición', desc:det, fecha:ts(), usuario:session.nombre, color:'amber'}];
       const obj = {...prev, ...campos, codigo:editCodigo, historial};
       const nuevoReg = {...obj, cantidad:cantidad, valor:campos.valor, historial};
+      const _verAbM=_r3VersionAbierta('mobiliario',editCodigo,prev), _baseAbM=_r3BaseAbierta('mobiliario',editCodigo,prev); _r3Cerrar('mobiliario',editCodigo);
       const idx = mobiliario.findIndex(m=>m.codigo===editCodigo);
       if(idx>=0) mobiliario[idx] = nuevoReg;
       guardarOptimista('mobiliario', nuevoReg, {
-        accion:'update', nombre:editCodigo, key:'edit-mob-'+editCodigo, vistas:['mobiliario','dashboard'],
+        accion:'update', nombre:editCodigo, key:'edit-mob-'+editCodigo, vistas:['mobiliario','dashboard'], base:_baseAbM,
         fvClave:'mob', borrador:_borMob, revertir:()=>{ const i=mobiliario.indexOf(nuevoReg); if(i>=0) mobiliario[i]=prev; }, reabrir:()=>openMob(editCodigo),
-        payload:()=>_limpiarReg(nuevoReg),
+        payload:()=>({..._limpiarReg(nuevoReg), _version:_verAbM}),
         alConfirmar: async()=>{ audit('EDITAR','Mobiliario',editCodigo,det); showToast('✅ Elemento actualizado','success'); }
       });
       closeModals(); setTimeout(_libMob,300);
@@ -11256,7 +11514,7 @@ async function guardarPersona(){
     const activosAfectados = activos.filter(a=>a.asignado===nombre && a.estado!=='eliminado');
     activosAfectados.forEach(a=>{ a.asignadoEmail=email; a.asignadoCargo=obj.cargo; });
     if(activosAfectados.length > 0){
-      await Promise.all(activosAfectados.map(a=>apiPost('activos','update',a)));
+      await _r3UpdateLote(activosAfectados.map(a=>['activos',a,['asignadoEmail','asignadoCargo']]));
     }
     } else {
       const raw = await apiGet('personas');
@@ -11447,14 +11705,14 @@ async function guardarEspacio(){
       const refNombre = nombreAnterior || nombre;
       const activosEspacio = activos.filter(a=>a.ubicacion===refNombre && a.estado!=='eliminado');
       activosEspacio.forEach(a=>{ a.responsableEspacioEmail = respEmail; if(nombreAnterior) a.ubicacion = nombre; });
-      const _ps = activosEspacio.map(a=>apiPost('activos','update',a));
+      const _ps = [...activosEspacio.map(a=>['activos',a,['responsableEspacioEmail','ubicacion']])];
       let _movidos = activosEspacio.length;
       if(nombreAnterior){
-        mobiliario.filter(m=>m.ubicacion===nombreAnterior && m.estado!=='eliminado').forEach(m=>{ m.ubicacion=nombre; _ps.push(apiPost('mobiliario','update',m)); _movidos++; });
-        if(Array.isArray(personas)) personas.filter(p=>p.espacioResponsable===nombreAnterior).forEach(p=>{ p.espacioResponsable=nombre; _ps.push(apiPost('personas','update',p)); _movidos++; });
+        mobiliario.filter(m=>m.ubicacion===nombreAnterior && m.estado!=='eliminado').forEach(m=>{ m.ubicacion=nombre; _ps.push(['mobiliario',m,['ubicacion']]); _movidos++; });
+        if(Array.isArray(personas)) personas.filter(p=>p.espacioResponsable===nombreAnterior).forEach(p=>{ p.espacioResponsable=nombre; _ps.push(['personas',p,['espacioResponsable']]); _movidos++; });
         audit('EDITAR','Espacios',editCod,`Renombrado: "${nombreAnterior}" → "${nombre}". Cascada: ${_movidos} registro(s) actualizados`);
       }
-      if(_ps.length) await Promise.all(_ps);
+      if(_ps.length) await _r3UpdateLote(_ps);
     } else {
       const raw = await apiGet('espacios');
       espacios = Array.isArray(raw) ? raw.map(r=>({...r})) : espacios;
@@ -11596,27 +11854,27 @@ async function guardarDepartamento(){
       const promises = [];
       // Activos
       activos.filter(a=>a.depto===nombreAnterior).forEach(a=>{
-        a.depto=nombre; promises.push(apiPost('activos','update',a)); cascadeCount++;
+        a.depto=nombre; promises.push(['activos',a,['depto']]); cascadeCount++;
       });
       // Personas
       if(Array.isArray(personas)) personas.filter(p=>p.depto===nombreAnterior).forEach(p=>{
-        p.depto=nombre; promises.push(apiPost('personas','update',p)); cascadeCount++;
+        p.depto=nombre; promises.push(['personas',p,['depto']]); cascadeCount++;
       });
       // Usuarios
       usuarios.filter(u=>u.depto===nombreAnterior).forEach(u=>{
-        u.depto=nombre; promises.push(apiPost('usuarios','update',u)); cascadeCount++;
+        u.depto=nombre; promises.push(['usuarios',u,['depto']]); cascadeCount++;
       });
       // Mobiliario
       if(Array.isArray(mobiliario)) mobiliario.filter(m=>m.depto===nombreAnterior).forEach(m=>{
-        m.depto=nombre; promises.push(apiPost('mobiliario','update',m)); cascadeCount++;
+        m.depto=nombre; promises.push(['mobiliario',m,['depto']]); cascadeCount++;
       });
       // Espacios: el portal público filtra las ubicaciones por el nombre del
       // departamento; sin esto, tras renombrarlo el portal dejaba de mostrarlas.
       if(Array.isArray(espacios)) espacios.filter(e=>e.depto===nombreAnterior).forEach(e=>{
-        e.depto=nombre; promises.push(apiPost('espacios','update',e)); cascadeCount++;
+        e.depto=nombre; promises.push(['espacios',e,['depto']]); cascadeCount++;
       });
       if(promises.length>0){
-        await Promise.all(promises);
+        await _r3UpdateLote(promises);
         showToast(`✅ Departamento renombrado. ${cascadeCount} registro(s) actualizados en cascada.`,'success');
         audit('EDITAR','Departamentos',obj.codigo,`Cascada: ${cascadeCount} registros actualizados de "${nombreAnterior}" a "${nombre}"`);
       } else {
