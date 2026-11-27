@@ -793,6 +793,7 @@ tr.gd-pend .gd-marca,.k-card.gd-pend .gd-marca{pointer-events:auto;}
 .f-inp.valid{border-color:#1D9E75!important;}
 .f-err{display:none;font-size:11px;color:#D85A30;margin-top:3px;padding:3px 8px;background:#FFF5F5;border-radius:4px;border-left:3px solid #D85A30;}
 .f-err.show{display:flex;align-items:center;gap:5px;}
+.fv-bad{border-color:#D85A30!important;background:#FFF5F5!important;}
 .f-hint{font-size:10px;color:var(--text3);margin-top:2px;padding:0 2px;}
 /* Autocomplete datalist */
 .f-inp[list]::-webkit-calendar-picker-indicator{opacity:0.5;}
@@ -1379,7 +1380,7 @@ tr.gd-pend .gd-marca,.k-card.gd-pend .gd-marca{pointer-events:auto;}
         </div>
         <div class="f-row">
           <div class="f-lbl">Capacidad (equipos)</div>
-          <input class="f-inp" type="number" id="esp-capacidad" min="0" placeholder="0">
+          <input class="f-inp" type="number" id="esp-capacidad" min="0" step="1" inputmode="numeric" data-nn="1" data-int="1" placeholder="0">
         </div>
         <div class="f-row">
           <div class="f-lbl">Estado</div>
@@ -1479,7 +1480,7 @@ tr.gd-pend .gd-marca,.k-card.gd-pend .gd-marca{pointer-events:auto;}
         </div>
         <div class="f-row">
           <div class="f-lbl">Cantidad *</div>
-          <input class="f-inp" id="mob-cantidad" type="number" min="1" placeholder="1" oninput="_mobActualizarModo()">
+          <input class="f-inp" id="mob-cantidad" type="number" min="1" max="500" step="1" inputmode="numeric" data-nn="1" data-int="1" placeholder="1" oninput="_mobActualizarModo()">
         </div>
         <div class="f-row">
           <div class="f-lbl">Condición *</div>
@@ -1518,7 +1519,7 @@ tr.gd-pend .gd-marca,.k-card.gd-pend .gd-marca{pointer-events:auto;}
         </div>
         <div class="f-row">
           <div class="f-lbl">Valor unitario ($)</div>
-          <input class="f-inp" id="mob-valor" type="number" min="0" placeholder="0">
+          <input class="f-inp" id="mob-valor" type="number" min="0.01" step="0.01" inputmode="decimal" data-nn="1" placeholder="0.00">
         </div>
         <div class="f-row" style="grid-column:1/-1;">
           <div class="f-lbl">📎 Foto o documento
@@ -1832,11 +1833,11 @@ tr.gd-pend .gd-marca,.k-card.gd-pend .gd-marca{pointer-events:auto;}
         </div>
         <div class="f-row">
           <div class="f-lbl">Costo anual ($)</div>
-          <input class="f-inp" type="number" min="0" step="0.01" id="lic-costo" placeholder="0.00">
+          <input class="f-inp" type="number" min="0" step="0.01" inputmode="decimal" data-nn="1" id="lic-costo" placeholder="0.00">
         </div>
         <div class="f-row">
           <div class="f-lbl">Cantidad de licencias / cupos</div>
-          <input class="f-inp" type="number" min="0" id="lic-cupos" placeholder="Ej: 50">
+          <input class="f-inp" type="number" min="0" step="1" inputmode="numeric" data-nn="1" data-int="1" id="lic-cupos" placeholder="Ej: 50">
           <div class="f-hint">💡 Cuántos equipos pueden tenerla instalada a la vez. Deja 0 o vacío si no aplica límite.</div>
         </div>
         <div class="f-row">
@@ -2112,6 +2113,7 @@ tr.gd-pend .gd-marca,.k-card.gd-pend .gd-marca{pointer-events:auto;}
     min="1990-01-01" max="2046-12-31"
     onchange="validateFechas();validateDateField(this)">
   <div class="f-err" id="err-ea-compra">⚠ Selecciona una fecha válida de compra</div>
+  <div class="f-hint" id="hint-ea-compra" style="display:none;color:#B45309">📅 Se registrará como compra programada</div>
 </div>
 <div class="f-row">
   <div class="f-lbl" id="lbl-ea-garantia">Garantía hasta</div>
@@ -2124,14 +2126,14 @@ tr.gd-pend .gd-marca,.k-card.gd-pend .gd-marca{pointer-events:auto;}
   </div>
   <div class="f-2">
     <div class="f-row"><div class="f-lbl" id="lbl-ea-valor">Valor ($)</div>
-  <input class="f-inp" type="number" min="0" step="0.01" id="ea-valor" placeholder="0.00"
+  <input class="f-inp" type="number" min="0.01" step="0.01" inputmode="decimal" data-nn="1" id="ea-valor" placeholder="0.00"
     oninput="validateField(this,'number','Solo números. Ej: 350.00')"
     onblur="validateField(this,'number','Solo números. Ej: 350.00')">
   <div class="f-err" id="err-ea-valor">⚠ Ingresa solo el número sin símbolos. Ej: 350.00</div>
   <div class="f-hint" id="hint-ea-valor">💡 Precio de compra en dólares</div>
 </div>
     <div class="f-row" id="row-ea-vida"><div class="f-lbl" id="lbl-ea-vida">Vida útil (años)</div>
-  <input class="f-inp" type="number" min="1" max="30" id="ea-vida" value="3"
+  <input class="f-inp" type="number" min="1" max="30" step="1" inputmode="numeric" data-nn="1" data-int="1" id="ea-vida" value="3"
     oninput="validateField(this,'integer','Número entero del 1 al 30')"
     onblur="validateField(this,'integer','Número entero del 1 al 30')">
   <div class="f-err" id="err-ea-vida">⚠ Ingresa un número entre 1 y 30 años</div>
@@ -2202,8 +2204,12 @@ tr.gd-pend .gd-marca,.k-card.gd-pend .gd-marca{pointer-events:auto;}
     <div class="f-row"><div class="f-lbl">Prioridad</div><select class="f-inp f-sel" id="et-prior"><option value="urgente">Urgente</option><option value="importante" selected>Importante</option><option value="normal">Normal</option></select></div>
   </div>
   <div class="f-2">
-    <div class="f-row"><div class="f-lbl">Estado</div><select class="f-inp f-sel" id="et-estado" onchange="_etActualizarBloqueDevolucion()"><option value="abierto" selected>Abierto</option><option value="progreso">En progreso</option><option value="revision">En revisión</option><option value="cerrado">Cerrado</option></select></div>
-    <div class="f-row"><div class="f-lbl">Avance %</div><input class="f-inp" type="number" id="et-avance" min="0" max="100" value="0"></div>
+    <div class="f-row"><div class="f-lbl">Estado</div><select class="f-inp f-sel" id="et-estado" onchange="_etActualizarBloqueDevolucion();_etActualizarReapertura()"><option value="abierto" selected>Abierto</option><option value="progreso">En progreso</option><option value="revision">En revisión</option><option value="cerrado">Cerrado</option></select></div>
+    <div class="f-row"><div class="f-lbl">Avance %</div><input class="f-inp" type="number" id="et-avance" min="0" max="100" step="1" inputmode="numeric" data-nn="1" data-int="1" value="0"></div>
+  </div>
+  <div class="f-row" id="et-reap-wrap" style="display:none;background:#FFF8E6;border:1px solid #F0D58A;border-radius:6px;padding:8px;">
+    <div class="f-lbl">Motivo de la reapertura *</div>
+    <input class="f-inp" id="et-reap-motivo" maxlength="300" placeholder="¿Por qué se vuelve a abrir este ticket cerrado?" oninput="if(this.value.trim())_fvMarcar('et-reap-motivo','')">
   </div>
   <div class="f-2">
     <div class="f-row"><div class="f-lbl">Deadline</div><input class="f-inp" type="date" id="et-dead" min="1990-01-01" max="2046-12-31" onchange="validateDateField(this)"></div>
@@ -2294,7 +2300,7 @@ tr.gd-pend .gd-marca,.k-card.gd-pend .gd-marca{pointer-events:auto;}
         </div>
       </div>
       <div class="f-lbl" style="margin-top:6px">Presupuesto estimado (opcional)</div>
-      <input class="f-inp" type="number" id="et-piezas-presupuesto" placeholder="0.00" step="0.01" min="0">
+      <input class="f-inp" type="number" id="et-piezas-presupuesto" placeholder="0.00" step="0.01" min="0" inputmode="decimal" data-nn="1">
       <div style="font-size:10px;color:var(--text3);margin-top:4px">
         Al guardar, el encargado recibe el correo con el pedido y este queda en el historial del ticket.
       </div>
@@ -2383,7 +2389,7 @@ tr.gd-pend .gd-marca,.k-card.gd-pend .gd-marca{pointer-events:auto;}
     </div>
     <div class="f-row"><div class="f-lbl">Fecha</div><input class="f-inp" type="date" id="mm-fecha" min="1990-01-01" max="2046-12-31" onchange="validateDateField(this)"></div>
   </div>
-  <div class="f-row"><div class="f-lbl">Costo ($)</div><input class="f-inp" type="number" id="mm-costo" placeholder="0.00"></div>
+  <div class="f-row"><div class="f-lbl">Costo ($)</div><input class="f-inp" type="number" id="mm-costo" placeholder="0.00" step="0.01" min="0" inputmode="decimal" data-nn="1"></div>
   <!-- ── SECCIÓN SOLICITUD DE PIEZAS ──────────────────────── -->
   <div style="background:#F0F4F8;border-radius:8px;padding:12px;margin-top:6px;border:1px solid #CBD5E1">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
@@ -2407,7 +2413,7 @@ tr.gd-pend .gd-marca,.k-card.gd-pend .gd-marca{pointer-events:auto;}
         </div>
       </div>
       <div class="f-row"><div class="f-lbl">Presupuesto estimado ($)</div>
-        <input class="f-inp" type="number" id="mm-piezas-presupuesto" placeholder="0.00">
+        <input class="f-inp" type="number" id="mm-piezas-presupuesto" placeholder="0.00" step="0.01" min="0" inputmode="decimal" data-nn="1">
       </div>
       <div style="font-size:11px;color:#666;margin-top:4px">
         📧 Se enviará una solicitud de compra por correo al encargado y quedará registrada en el historial del activo.
@@ -3076,6 +3082,7 @@ async function cargarNombreInstitucion(){
   try{
     const r = await fetch(API+"?action=config&t="+Date.now(), {mode:"cors"});
     const d = await r.json();
+    _fvRecibirConfig(d);
     const nombre = (d && d.ok && d.nombreInstitucion) ? d.nombreInstitucion : '';
     if(el) el.textContent = nombre;
     if(nombre) document.title = 'SAGAE — ' + nombre;
@@ -3102,6 +3109,7 @@ async function loadFromSheets(){
   const lt=document.getElementById('loading-text'),ls=document.getElementById('loading-sub');
   const cancelBtn=document.getElementById('loading-cancel-btn');
   cancelBtn.style.display='none';
+  _fvCargarEsquemas(); // R2: reglas de validación del servidor (no bloquea la carga)
   if(_cargaInicial){ // esqueleto en vez de tabla vacía mientras llegan los datos
     const ta=document.getElementById('tb-activos'),tt=document.getElementById('tb-tickets');
     if(ta) ta.innerHTML=_esqueletoFilas(10);
@@ -3593,6 +3601,7 @@ async function adminResetear2FA(){
 }
 
 async function saveUsuario(){
+  if(!fvTodo('usuario')) return; // R2
   const isEdit=document.getElementById('eu-id').value!=='';
   const username=document.getElementById('eu-username').value.trim();
   const pass=document.getElementById('eu-pass').value;
@@ -3949,6 +3958,7 @@ async function _versionTerminos(){
   try{
     const r=await fetch(API+'?action=config&t='+Date.now(),{mode:'cors'});
     const d=await r.json();
+    _fvRecibirConfig(d);
     if(d && d.ok && d.terminosVersion) _terminosVer=String(d.terminosVersion);
   }catch(e){}
   return _terminosVer;
@@ -4110,10 +4120,14 @@ function openActivo(id){
     document.getElementById('ea-tipo').selectedIndex=0;
     onChangeTipoActivo(document.getElementById('ea-tipo').value);
   }
+  _fvHintCompra();
   document.getElementById('mod-activo').classList.add('open');
 }
 
 async function saveActivo(){
+  // R2: reglas del servidor (esquemas), mensaje debajo de cada campo
+  if(!fvTodo('activo')) return;
+  const _borAct = fvBorrador('activo');
   // ── VALIDACIÓN COMPLETA ANTES DE GUARDAR ──────────────────────
   let formOk = true;
   const nombre = document.getElementById('ea-nombre').value.trim();
@@ -4178,6 +4192,7 @@ async function saveActivo(){
     const motivo=document.getElementById('ea-motivo').value.trim();if(!motivo){alert('El motivo es obligatorio.');return;}
     const a=activos.find(x=>x.codigo===editId);if(!a)return;
     if(a._estadoGuardado){showToast('Este activo tiene un guardado pendiente. Espera la confirmación o usa «Reintentar» en su fila.','');return;}
+    const _snapAct={...a, historial:(a.historial||[]).slice()};
     const cambios=[];
     // Guardar asignado y depto ANTES de aplicar cambios para detectar reasignación
     const _asignadoAntes = a.asignado||'—';
@@ -4263,6 +4278,7 @@ async function saveActivo(){
     // Guardado optimista: los cambios ya están aplicados en memoria; la fila muestra "Guardando…"
     guardarOptimista('activos', a, {
       accion:'update', nombre:a.codigo, key:'edit-act-'+a.codigo, vistas:['activos','dashboard'],
+      fvClave:'activo', borrador:_borAct, revertir:()=>Object.assign(a,_snapAct), reabrir:()=>openActivo(a.codigo),
       payload:()=>_limpiarReg(a),
       alConfirmar: async(res)=>{
         audit('EDITAR','Activo',a.codigo,det);
@@ -4298,6 +4314,7 @@ async function saveActivo(){
     };
     guardarOptimista('activos', a, {
       accion:'insert', nombre:'el activo', key:code, vistas:['activos','dashboard'],
+      fvClave:'activo', borrador:_borAct, reabrir:()=>{ activos=activos.filter(x=>x!==a); cntActivos=activos.length; openActivo(null); },
       payload:()=>_limpiarReg(a),
       alTimeout: async()=>{
         // Sin confirmación NO se reintenta a ciegas: se recarga para ver si entró.
@@ -4605,7 +4622,7 @@ function openTicket(id,forceReadOnly){
   }
   document.getElementById('et-motivo').value='';document.getElementById('et-id').value=id||'';
   const sel=document.getElementById('et-activo');
-  sel.innerHTML='<option value="">— Sin activo —</option>'+activos.filter(a=>a.estado!=='eliminado').map(a=>`<option value="${_escHtml(a.codigo)}">${_escHtml(a.codigo)} — ${_escHtml(a.nombre||'')}</option>`).join('');
+  sel.innerHTML='<option value="">— Sin activo —</option>'+activos.filter(a=>a.estado!=='eliminado'&&!a._estadoGuardado&&!a._temporal).map(a=>`<option value="${_escHtml(a.codigo)}">${_escHtml(a.codigo)} — ${_escHtml(a.nombre||'')}</option>`).join('');
   // Poblar select de responsables con usuarios activos
   const respSel=document.getElementById('et-resp');
   const usuariosActivos=responsablesLista.filter(u=>u.estado==='activo'||u.estado!=='inactivo');
@@ -4645,6 +4662,7 @@ function openTicket(id,forceReadOnly){
     el.style.cursor=readOnly?'not-allowed':'';
   });
   document.getElementById('et-fotos-add-btn').style.display=readOnly?'none':'';
+  _etActualizarReapertura();
   document.getElementById('mod-ticket').classList.add('open');
 }
 
@@ -4886,7 +4904,7 @@ function _pendBarra(){
 function _marcaGuardado(it){
   if(!it || !it._estadoGuardado) return '';
   if(it._estadoGuardado==='error')
-    return '<span class="gd-marca gd-err" role="button" tabindex="0" title="El borrador se conserva. Toca para reintentar." onclick="event.stopPropagation();reintentarGuardado(\''+_jsArg(it._pendKey)+'\')">⚠ No se guardó · Reintentar</span>';
+    return '<span class="gd-marca gd-err" role="button" tabindex="0" title="El borrador se conserva. Toca para reintentar." onclick="event.stopPropagation();reintentarGuardado(\''+_jsArg(it._pendKey)+'\')">⚠ No se guardó · '+((_pend.get(it._pendKey)||{}).ultimoError==='VALIDACION'?'Corregir':'Reintentar')+'</span>';
   return '<span class="gd-marca gd-ok">⏳ Guardando…</span>';
 }
 
@@ -4962,6 +4980,14 @@ async function _enviarPend(e){
   if(!res || res.ok===false){
     e.ultimoError = (res&&res.error)||'';
     _pendMarcar(e,'error');
+    if(e.ultimoError==='VALIDACION' && e.op.reabrir){
+      // El servidor rechazó datos: se vuelve al formulario con lo escrito y los campos marcados
+      e.validacion = (res&&res.campos)||{};
+      showToast('⚠ No se guardó'+(e.op.nombre?' '+e.op.nombre:'')+': '+_MSG_ERR_SERVIDOR.VALIDACION,'error');
+      _pendBarra(); renderSolo(e.op.vistas);
+      _reabrirPorValidacion(e,true);
+      return;
+    }
     showToast('⚠ No se guardó'+(e.op.nombre?' '+e.op.nombre:'')+': '+_impMotivo(res)+' Toca «Reintentar» en la fila.','error');
     _pendBarra(); renderSolo(e.op.vistas);
     return;
@@ -4983,7 +5009,24 @@ function reintentarGuardado(key){
   // el servidor recuerda SOLO las operaciones EXITOSAS, nunca los errores. Así, si el primer envío sí
   // se guardó (tiempo agotado al confirmar), el reintento recibe el resultado anterior sin escribir
   // otra fila; y si fue rechazado, el mismo _opId no tiene nada recordado y se procesa normal.
+  if(e.ultimoError==='VALIDACION' && e.op.reabrir){ _reabrirPorValidacion(e,false); return; }
   _enviarPend(e);
+}
+
+// R2: el servidor devolvió VALIDACION. Se quita el borrador de la lista y se reabre el formulario con
+// lo que la persona escribió, marcando los campos que el servidor señaló (no se reintenta a ciegas).
+function _reabrirPorValidacion(e, auto){
+  const op=e.op;
+  if(!op.reabrir || e.estado!=='error') return;
+  if(auto && document.querySelector('.modal-bg.open')) return; // hay otra ventana abierta: queda la fila para tocarla
+  _pend.delete(e.key);
+  e.registros.forEach(r=>{ delete r._estadoGuardado; delete r._pendKey; });
+  try{ if(op.revertir) op.revertir(e); }catch(err){}
+  _pendBarra();
+  try{ op.reabrir(e); }catch(err){ showToast('No se pudo reabrir el formulario: '+((err&&err.message)||''),'error'); }
+  const campos=e.validacion||{};
+  setTimeout(()=>{ if(op.fvClave){ fvLlenar(op.fvClave, op.borrador); fvAplicarServidor(op.fvClave, campos); } },200);
+  renderSolo(op.vistas);
 }
 
 // Con envíos sin confirmar, avisar antes de cerrar la pestaña
@@ -5007,16 +5050,28 @@ function saveTicket(){
     showToast('El ticket se está guardando, espera un momento...','');
     return;
   }
+  if(!fvTodo('ticket')) return; // R2: reglas del servidor (esquemas)
   const titulo=document.getElementById('et-titulo').value.trim();if(!titulo){alert('El título es obligatorio.');return;}
   const editId=document.getElementById('et-id').value,isEdit=editId!=='';
   // ── Validaciones ANTES de cerrar la ventana (igual que siempre) ──
-  let motivo='';
+  let motivo='', motivoReap='';
   if(isEdit){
     motivo=document.getElementById('et-motivo').value.trim();
     if(!motivo){alert('El motivo es obligatorio.');return;}
     const _t0=tickets.find(x=>x.codigo===editId);
     if(!_t0){showToast('No se encontró el ticket a editar.','error');return;}
     if(_t0._estadoGuardado){showToast('Este ticket tiene un guardado pendiente. Espera la confirmación o usa «Reintentar» en su fila.','');return;}
+    // Reapertura: un ticket cerrado que vuelve a abierto/en progreso pide el motivo
+    if(_t0.estado==='cerrado' && document.getElementById('et-estado').value!=='cerrado'){
+      motivoReap=document.getElementById('et-reap-motivo').value.trim();
+      if(motivoReap.length<5){
+        _etActualizarReapertura();
+        _fvMarcar('et-reap-motivo','Indica el motivo de la reapertura (mínimo 5 caracteres).');
+        showToast('Falta el motivo de la reapertura.','error');
+        document.getElementById('et-reap-motivo').focus();
+        return;
+      }
+    }
   }
   // Si se pidieron piezas, los dos campos son obligatorios — al crear y al editar.
   if(document.getElementById('et-necesita-piezas')?.checked
@@ -5050,12 +5105,14 @@ function saveTicket(){
       devNombre:q('et-dev-nombre').trim(), devCond:q('et-dev-cond').trim(),
       activoId:q('et-activo')
     };
+    const _borT=fvBorrador('ticket'), _fotosBor=_etFotosActuales.slice(), _quitarBor=f.quitar.slice();
     _etFotosQuitar=[];
 
     if(isEdit){
       const t=tickets.find(x=>x.codigo===editId);
       // Valores ANTES del cambio, para el historial
       const ant = {estado:t.estado, avance:t.avance||0, resp:t.resp||'—'};
+      const _snapT={...t, historial:Array.isArray(t.historial)?t.historial.slice():t.historial};
       const cambios=[];
       if(t.titulo!==titulo)cambios.push(`Título:"${t.titulo}"→"${titulo}"`);if(t.resp!==f.resp)cambios.push(`Responsable:"${t.resp}"→"${f.resp}"`);
       // Se aplica en memoria ya: la fila muestra el cambio con la marca "Guardando…"
@@ -5064,6 +5121,8 @@ function saveTicket(){
       const det=`Motivo: ${motivo}. ${cambios.length?'Cambios: '+cambios.join('; '):''}`;
       guardarOptimista('tickets', t, {
         accion:'update', nombre:t.codigo, key:'edit-'+t.codigo, vistas:['tickets','kanban','dashboard'],
+        fvClave:'ticket', borrador:_borT, revertir:()=>{ Object.assign(t,_snapT); },
+        reabrir:()=>{ openTicket(t.codigo); _etFotosQuitar=_quitarBor.slice(); _renderGaleriaFotosAdmin(_fotosBor); },
         preparar: async()=>{
           // La lista llega en modo ligero (historial recortado). Guardar así borraría
           // los eventos que no se descargaron: primero se trae el historial completo.
@@ -5080,6 +5139,14 @@ function saveTicket(){
             desc: det+(eventosDetalle.length?' | '+eventosDetalle.join(' · '):''),
             fecha:ts(),usuario:session.nombre,color:colorEvento
           });
+          // ── Reapertura de un ticket cerrado: evento propio con el motivo ──
+          if(motivoReap){
+            t.historial.push({
+              tipo:'Reapertura', desc:'Reabierto por '+session.nombre+': '+motivoReap,
+              motivo:motivoReap, estadoAnterior:ant.estado, estadoNuevo:t.estado,
+              fecha:ts(), usuario:session.nombre, color:'amber'
+            });
+          }
           // ── Recepción de un equipo que no está en el inventario ──
           if(!t.activoId && f.extVisible && (f.extEquipo || f.extNombre)){
             t.historial.push({
@@ -5133,6 +5200,8 @@ function saveTicket(){
       tickets.push(t);
       guardarOptimista('tickets', t, {
         accion:'insert', nombre:'el ticket', key:code, vistas:['tickets','kanban','dashboard'],
+        fvClave:'ticket', borrador:_borT,
+        reabrir:()=>{ tickets=tickets.filter(x=>x!==t); openTicket(null); _etFotosQuitar=_quitarBor.slice(); _renderGaleriaFotosAdmin(_fotosBor); },
         payload: ()=>_limpiarReg(t),
         alTimeout: async()=>{
           // No se pudo confirmar. NO se reintenta a ciegas (eso duplicaba filas): se recarga
@@ -5339,6 +5408,7 @@ async function toggleSolicitudPiezas(checked){
 
 async function saveMant(){
   if(!activoActual) return;
+  if(!fvTodo('mant')) return; // R2
   const desc = document.getElementById('mm-desc').value.trim();
   if(!desc){ showToast('La descripción es obligatoria','error'); return; }
 
@@ -5412,7 +5482,7 @@ async function saveMant(){
   showToast('✅ Mantenimiento registrado' + (necesitaPiezas?' — Solicitud de compra enviada':''),'success');
 }
 
-function closeModals(){document.querySelectorAll('.modal-bg').forEach(m=>m.classList.remove('open'));}
+function closeModals(){document.querySelectorAll('.modal-bg').forEach(m=>m.classList.remove('open'));try{Object.keys(_FV).forEach(fvLimpiar);}catch(e){}}
 
 
 
@@ -8090,6 +8160,354 @@ function _escHtml(s){
   return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// R2 "datos válidos" (v12): validación en pantalla con los ESQUEMAS que publica el servidor
+// (GET ?action=config -> esquemas). Es la MISMA tabla que aplica el servidor: aquí solo se
+// adelanta el aviso. Si los esquemas no llegan (servidor viejo) no se bloquea nada y el servidor decide.
+// ═══════════════════════════════════════════════════════════════════
+let _ESQUEMAS = null;
+// Reglas solo de pantalla (no las publica el servidor): se usan únicamente cuando los esquemas sí llegaron.
+const _ESQ_LOCAL = {
+  tickets:{
+    presupuesto:{tipo:'numero',min:0,dec:2,msg:'El presupuesto no puede ser negativo.'},
+    emailCompras:{tipo:'correo',msg:'Correo no válido.'},
+    emailResp:{tipo:'correo',msg:'Correo no válido.'}
+  },
+  mantenimiento:{
+    desc:{tipo:'texto',req:true,min:3,max:2000,msg:'Describe el mantenimiento (3 a 2000 caracteres).'},
+    costo:{tipo:'numero',min:0,dec:2,msg:'El costo no puede ser negativo.'},
+    fecha:{tipo:'fecha',fechaMin:'1990-01-01',fechaMaxDias:1,msg:'Fecha no válida (no puede ser futura).'}, // 1 día de margen por la hora UTC del navegador
+    emailResp:{tipo:'correo',msg:'Correo no válido.'},
+    emailCompras:{tipo:'correo',msg:'Correo no válido.'},
+    presupuesto:{tipo:'numero',min:0,dec:2,msg:'El presupuesto no puede ser negativo.'}
+  }
+};
+function _fvRecibirConfig(d){
+  if(d && d.ok && d.esquemas && typeof d.esquemas==='object' && !Array.isArray(d.esquemas)) _ESQUEMAS = d.esquemas;
+}
+async function _fvCargarEsquemas(){
+  if(_ESQUEMAS) return;
+  try{ const r = await fetch(API+'?action=config&t='+Date.now(),{mode:'cors'}); _fvRecibirConfig(await r.json()); }catch(e){}
+}
+function _fvLista(h){
+  try{
+    switch(h){
+      case 'activos': return activos||[];
+      case 'tickets': return tickets||[];
+      case 'mobiliario': return mobiliario||[];
+      case 'licencias': return licencias||[];
+      case 'personas': return personas||[];
+      case 'espacios': return espacios||[];
+      case 'departamentos': return departamentos||[];
+      case 'usuarios': return usuarios||[];
+    }
+  }catch(e){}
+  return [];
+}
+function _fvNorm(v){ if(v==null) return ''; const s=String(v).trim(); return s==='—' ? '' : s; }
+function _fvNum(s){ s=String(s).trim().replace(/^\+/,''); if(!/^-?\d+([.,]\d+)?$/.test(s)) return NaN; return Number(s.replace(',','.')); }
+function _fvIgual(a,b){
+  a=_fvNorm(a); b=_fvNorm(b);
+  if(a===b) return true;
+  if(a!=='' && b!==''){ const x=_fvNum(a), y=_fvNum(b); if(!isNaN(x)&&!isNaN(y)) return x===y; }
+  // un 0 guardado se muestra como casilla vacía: no cuenta como cambio
+  if((a==='' && _fvNum(b)===0) || (b==='' && _fvNum(a)===0)) return true;
+  return false;
+}
+function _fvEsFecha(s){
+  const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s); if(!m) return false;
+  const d=new Date(Date.UTC(+m[1],+m[2]-1,+m[3]));
+  return d.getUTCFullYear()===+m[1] && d.getUTCMonth()===+m[2]-1 && d.getUTCDate()===+m[3];
+}
+function _fvHoyMas(n){
+  const d=new Date(); d.setDate(d.getDate()+n);
+  const p=x=>String(x).padStart(2,'0');
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());
+}
+function _fvReglas(hoja){
+  if(!_ESQUEMAS) return null;
+  return Object.assign({}, _ESQ_LOCAL[hoja]||{}, _ESQUEMAS[hoja]||{});
+}
+// Devuelve el mensaje de error de UN campo, o '' si está bien.
+function _fvCampo(hoja, campo, r, reg){
+  const v=_fvNorm(reg[campo]);
+  const msg=def=>r.msg||def;
+  if(v==='') return r.req ? msg('Este campo es obligatorio.') : '';
+  const t=r.tipo||'texto';
+  if(t==='texto' || t==='codigoRef'){
+    if(r.min!=null && v.length<r.min) return msg('Escribe al menos '+r.min+' caracteres.');
+    if(r.max!=null && v.length>r.max) return msg('Máximo '+r.max+' caracteres.');
+  }else if(t==='entero' || t==='numero'){
+    const n=_fvNum(v);
+    if(isNaN(n) || (t==='entero' && !Number.isInteger(n))) return msg(t==='entero'?'Escribe un número entero.':'Escribe un número válido.');
+    if(r.min!=null && n<r.min) return msg('El valor mínimo es '+r.min+'.');
+    if(r.max!=null && n>r.max) return msg('El valor máximo es '+r.max+'.');
+    if(r.gt!=null && !(n>r.gt)) return msg('Debe ser mayor que '+r.gt+'.');
+    if(r.dec!=null){ const dec=v.replace(',','.').split('.')[1]; if(dec && dec.length>r.dec) return msg('Máximo '+r.dec+' decimales.'); }
+  }else if(t==='fecha'){
+    if(!_fvEsFecha(v)) return msg('Fecha no válida (use AAAA-MM-DD).');
+    if(r.fechaMin && v<r.fechaMin) return msg('La fecha no puede ser anterior a '+r.fechaMin+'.');
+    if(r.fechaMaxDias!=null && v>_fvHoyMas(r.fechaMaxDias)) return msg('La fecha es demasiado lejana.');
+    if(r.gteCampo){ const o=_fvNorm(reg[r.gteCampo]); if(_fvEsFecha(o) && v<o) return r.msgCruce||msg('No puede ser anterior a '+r.gteCampo+'.'); }
+    if(r.lteCampo){ const o=_fvNorm(reg[r.lteCampo]); if(_fvEsFecha(o) && v>o) return r.msgCruce||msg('No puede ser posterior a '+r.lteCampo+'.'); }
+  }else if(t==='correo'){
+    if(!/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]{2,}$/.test(v) || (r.max!=null && v.length>r.max)) return msg('Correo no válido.');
+  }else if(t==='telefono'){
+    if(v.length<7 || v.length>20 || !/^[0-9+\-() ]+$/.test(v)) return msg('Teléfono no válido (7 a 20 caracteres: números, + - ( ) y espacios).');
+  }
+  if(r.patron){ let ok=true; try{ ok=new RegExp(r.patron).test(v); }catch(e){} if(!ok) return msg('Formato no válido.'); }
+  if(r.valores && Array.isArray(r.valores) && !r.valores.includes(v)) return msg('Valor no permitido.');
+  if(r.unico){
+    const norm=s=>{ s=_fvNorm(s); return r.normal==='sinEspaciosMinusculas' ? s.replace(/\s+/g,'').toLowerCase() : s.toLowerCase(); };
+    const mio = hoja==='usuarios' ? '' : _fvNorm(reg.codigo);
+    const dup=_fvLista(hoja).find(x=>x && (x.estado!=='eliminado' || r.unicoConEliminados) && (hoja==='usuarios' || !mio || x.codigo!==mio) && norm(x[campo])===norm(v));
+    if(dup) return hoja==='usuarios' ? ((r.msgUnico||'Ese usuario ya existe')+'.') : ('Ya existe en '+(dup.codigo||'otro registro')+'.');
+  }
+  if(r.ref){
+    const L=_fvLista(r.ref);
+    if(L.length && !L.some(x=>x && x.codigo===v)) return msg('No existe ('+v+').');
+  }
+  return '';
+}
+// validarConEsquema(hoja, registro, registroAnterior) -> { campo: mensaje }
+// En edición (registroAnterior) solo se valida lo que cambia. Sin esquemas no bloquea nada.
+function validarConEsquema(hoja, registro, registroAnterior){
+  const reglas=_fvReglas(hoja); const errs={};
+  if(!reglas || !registro) return errs;
+  Object.keys(reglas).forEach(campo=>{
+    if(!(campo in registro)) return;                       // el formulario no tiene ese campo
+    if(registroAnterior && _fvIgual(registro[campo], registroAnterior[campo])) return;
+    const m=_fvCampo(hoja, campo, reglas[campo], registro);
+    if(m) errs[campo]=m;
+  });
+  return errs;
+}
+
+// ── Interfaz: mensaje debajo del campo + borde rojo ──
+const _FV = {}, _FV_ID = {};
+// cfg: {hoja, campos:{campo:idInput}, etiquetas:{campo:'Nombre'}, extras:[ids a guardar en el borrador],
+//       ocultos:{campo:idContenedor}, leer?:()=>extra, anterior:()=>registro|null}
+function fvRegistrar(clave, cfg){
+  _FV[clave]=cfg;
+  Object.keys(cfg.campos).forEach(c=>{ _FV_ID[cfg.campos[c]]={clave:clave, campo:c}; });
+}
+function fvLeer(clave){
+  const cfg=_FV[clave], o={};
+  Object.keys(cfg.campos).forEach(c=>{
+    const el=document.getElementById(cfg.campos[c]); if(!el) return;
+    const w=cfg.ocultos&&cfg.ocultos[c] ? document.getElementById(cfg.ocultos[c]) : null;
+    if(w && w.style.display!=='block') return;              // campo de un bloque que no está a la vista
+    o[c]=el.value;
+  });
+  if(cfg.fijos) Object.assign(o, cfg.fijos());
+  return o;
+}
+function fvExtras(clave){
+  const cfg=_FV[clave], o={};
+  (cfg.extras||[]).forEach(id=>{ const el=document.getElementById(id); if(el) o[id]=el.value; });
+  return o;
+}
+function fvBorrador(clave){ return {campos:fvLeer(clave), extras:fvExtras(clave)}; }
+function fvLlenar(clave, bor){
+  const cfg=_FV[clave]; if(!cfg || !bor) return;
+  Object.keys(cfg.campos).forEach(c=>{
+    if(!bor.campos || !(c in bor.campos)) return;
+    const el=document.getElementById(cfg.campos[c]); if(el) el.value=bor.campos[c];
+  });
+  Object.keys(bor.extras||{}).forEach(id=>{ const el=document.getElementById(id); if(el) el.value=bor.extras[id]; });
+}
+function _fvMarcar(id, msg){
+  const el=document.getElementById(id); if(!el) return;
+  let m=document.getElementById('err-'+id);
+  if(msg){
+    if(!m){ m=document.createElement('div'); m.id='err-'+id; m.className='f-err'; m.setAttribute('role','alert'); el.insertAdjacentElement('afterend',m); }
+    m.textContent='⚠ '+msg; m.classList.add('show'); el.classList.add('fv-bad'); el.setAttribute('aria-invalid','true');
+  }else{
+    if(m) m.classList.remove('show');
+    el.classList.remove('fv-bad'); el.classList.remove('error'); el.removeAttribute('aria-invalid');
+  }
+}
+function _fvErrores(clave){
+  const cfg=_FV[clave];
+  const e=validarConEsquema(cfg.hoja, fvLeer(clave), cfg.anterior?cfg.anterior():null);
+  const f={}; Object.keys(e).forEach(c=>{ if(cfg.campos[c]) f[c]=e[c]; });
+  return f;
+}
+// Valida un campo (al salir de él) y los que dependen de él (fechas relacionadas).
+function fvCampo(clave, campo){
+  const cfg=_FV[clave]; if(!cfg || !_ESQUEMAS) return;
+  const errs=_fvErrores(clave), reglas=_fvReglas(cfg.hoja)||{};
+  const afectados=[campo];
+  Object.keys(reglas).forEach(c=>{ if(cfg.campos[c] && (reglas[c].gteCampo===campo || reglas[c].lteCampo===campo)) afectados.push(c); });
+  afectados.forEach(c=>{
+    const id=cfg.campos[c]; if(!id) return;
+    const v=_fvNorm((fvLeer(clave))[c]);
+    _fvMarcar(id, (c===campo || v!=='') ? (errs[c]||'') : '');
+  });
+}
+// Valida todo el formulario. Devuelve true si se puede guardar.
+function fvTodo(clave){
+  const cfg=_FV[clave]; if(!cfg) return true;
+  if(!_ESQUEMAS) return true;
+  const errs=_fvErrores(clave), malos=[];
+  Object.keys(cfg.campos).forEach(c=>{
+    const m=errs[c]||''; _fvMarcar(cfg.campos[c], m);
+    if(m) malos.push(c);
+  });
+  if(!malos.length) return true;
+  const el=document.getElementById(cfg.campos[malos[0]]); if(el && el.focus) try{ el.focus(); }catch(e){}
+  const et=malos.map(c=>(cfg.etiquetas&&cfg.etiquetas[c])||c);
+  showToast('Falta o corrige: '+et.join(', ')+'. '+errs[malos[0]],'error');
+  return false;
+}
+// Marca los campos que el servidor rechazó (respuesta VALIDACION).
+function fvAplicarServidor(clave, campos){
+  const cfg=_FV[clave]; if(!cfg || !campos) return false;
+  let primero=null; const sueltos=[];
+  Object.keys(campos).forEach(c=>{
+    const id=cfg.campos[c];
+    if(id){ _fvMarcar(id, String(campos[c]||'Valor no válido.')); if(!primero) primero=id; }
+    else sueltos.push((cfg.etiquetas&&cfg.etiquetas[c]||c)+': '+campos[c]);
+  });
+  if(primero){ const el=document.getElementById(primero); if(el&&el.focus) try{ el.focus(); }catch(e){} }
+  if(sueltos.length) showToast('El servidor rechazó: '+sueltos.join(' · '),'error');
+  return !!primero || sueltos.length>0;
+}
+// Cuando la ventana sigue abierta (formularios sin guardado optimista): marca según la hoja.
+function fvServidorPorHoja(hoja, campos){
+  const k=Object.keys(_FV).find(x=>_FV[x].hoja===hoja && _FV[x].abierto && _FV[x].abierto());
+  return k ? fvAplicarServidor(k, campos) : false;
+}
+function fvLimpiar(clave){
+  const cfg=_FV[clave]; if(!cfg) return;
+  Object.keys(cfg.campos).forEach(c=>_fvMarcar(cfg.campos[c],''));
+}
+// Texto legible de un VALIDACION del servidor (importaciones, mensajes)
+function _fvTextoCampos(campos){
+  return Object.keys(campos||{}).map(k=>k+': '+campos[k]).join('; ');
+}
+
+// ── Eventos delegados: al salir del campo, al escribir, números sin signo, serie en vivo ──
+let _fvTimer = null;
+document.addEventListener('focusout', ev=>{
+  const x=_FV_ID[ev.target && ev.target.id]; if(x && ev.target.offsetParent!==null) fvCampo(x.clave, x.campo); // solo si el campo está a la vista
+});
+document.addEventListener('change', ev=>{
+  const x=_FV_ID[ev.target && ev.target.id]; if(x && ev.target.offsetParent!==null) fvCampo(x.clave, x.campo);
+});
+document.addEventListener('input', ev=>{
+  const el=ev.target; if(!el || !el.id) return;
+  if(el.dataset && el.dataset.nn!==undefined && typeof el.value==='string' && el.value.charAt(0)==='-') el.value=el.value.replace(/-/g,'');
+  const x=_FV_ID[el.id]; if(!x) return;
+  const cfg=_FV[x.clave]; const r=(_fvReglas(cfg.hoja)||{})[x.campo];
+  if(r && r.unico){                                       // serie/usuario repetido: aviso en vivo con 400 ms de espera
+    clearTimeout(_fvTimer);
+    _fvTimer=setTimeout(()=>fvCampo(x.clave,x.campo),400);
+  }else if(el.classList.contains('fv-bad')){              // ya tenía error: se quita en cuanto queda bien
+    fvCampo(x.clave,x.campo);
+  }
+});
+document.addEventListener('keydown', ev=>{
+  const el=ev.target;
+  if(!el || !el.dataset || el.dataset.nn===undefined) return;
+  if(ev.key==='-'||ev.key==='+'||ev.key==='e'||ev.key==='E') ev.preventDefault();
+  if(el.dataset.int!==undefined && (ev.key==='.'||ev.key===',')) ev.preventDefault();
+});
+
+// Formularios registrados (campo del esquema -> id del campo en pantalla)
+fvRegistrar('activo',{hoja:'activos',
+  campos:{nombre:'ea-nombre',tipo:'ea-tipo',estado:'ea-estado',marca:'ea-marca',modelo:'ea-modelo',serial:'ea-serial',ubicacion:'ea-ubicacion',depto:'ea-depto',asignadoEmail:'ea-asignado-email',compra:'ea-compra',garantia:'ea-garantia',valor:'ea-valor',vida:'ea-vida',obs:'ea-obs'},
+  etiquetas:{nombre:'nombre',tipo:'tipo',estado:'estado',marca:'marca',modelo:'modelo',serial:'serie',ubicacion:'ubicación',depto:'departamento',asignadoEmail:'correo',compra:'fecha de compra',garantia:'garantía',valor:'valor',vida:'vida útil',obs:'observaciones'},
+  extras:['ea-motivo'],
+  fijos:()=>({codigo:document.getElementById('ea-id').value}),
+  anterior:()=>{ const id=document.getElementById('ea-id').value; return id ? (activos.find(x=>x.codigo===id)||null) : null; },
+  abierto:()=>document.getElementById('mod-activo').classList.contains('open')});
+fvRegistrar('ticket',{hoja:'tickets',
+  campos:{titulo:'et-titulo',activoId:'et-activo',resp:'et-resp',tipo:'et-tipo',prior:'et-prior',estado:'et-estado',avance:'et-avance',dead:'et-dead',proy:'et-proy',desc:'et-desc',presupuesto:'et-piezas-presupuesto',emailCompras:'et-piezas-email',emailResp:'et-ext-email'},
+  etiquetas:{titulo:'título',activoId:'activo',resp:'responsable',tipo:'tipo',prior:'prioridad',estado:'estado',avance:'avance',dead:'fecha límite',proy:'proyecto',desc:'descripción',presupuesto:'presupuesto',emailCompras:'correo de compras',emailResp:'correo de quien entrega'},
+  ocultos:{presupuesto:'et-piezas-wrap',emailCompras:'et-piezas-wrap',emailResp:'et-externo-wrap'},
+  extras:['et-motivo','et-reap-motivo','et-piezas-desc','et-piezas-urgencia','et-ext-equipo','et-ext-cond','et-ext-nombre','et-dev-nombre','et-dev-cond'],
+  fijos:()=>({codigo:document.getElementById('et-id').value}),
+  anterior:()=>{ const id=document.getElementById('et-id').value; return id ? (tickets.find(x=>x.codigo===id)||null) : null; },
+  abierto:()=>document.getElementById('mod-ticket').classList.contains('open')});
+fvRegistrar('mant',{hoja:'mantenimiento',
+  campos:{desc:'mm-desc',costo:'mm-costo',fecha:'mm-fecha',emailResp:'mm-email-resp',emailCompras:'mm-piezas-email',presupuesto:'mm-piezas-presupuesto'},
+  etiquetas:{desc:'descripción',costo:'costo',fecha:'fecha',emailResp:'correo del responsable',emailCompras:'correo de compras',presupuesto:'presupuesto'},
+  ocultos:{emailCompras:'mm-piezas-form',presupuesto:'mm-piezas-form'},
+  abierto:()=>document.getElementById('mod-mant').classList.contains('open')});
+fvRegistrar('mob',{hoja:'mobiliario',
+  campos:{nombre:'mob-nombre',tipo:'mob-tipo',cantidad:'mob-cantidad',condicion:'mob-condicion',ubicacion:'mob-ubicacion',depto:'mob-depto',material:'mob-material',color:'mob-color',valor:'mob-valor',obs:'mob-obs'},
+  etiquetas:{nombre:'nombre',tipo:'tipo',cantidad:'cantidad',condicion:'condición',ubicacion:'ubicación',depto:'departamento',material:'material',color:'color',valor:'valor',obs:'observaciones'},
+  extras:['mob-motivo','mob-modo'],
+  fijos:()=>{ const c=document.getElementById('mod-mob')._editCodigo||''; const o={codigo:c}; if(!c && !(parseInt(document.getElementById('mob-cantidad').value)>0)) o.cantidad=document.getElementById('mob-cantidad').value; return o; },
+  anterior:()=>{ const c=document.getElementById('mod-mob')._editCodigo; return c ? (mobiliario.find(x=>x.codigo===c)||null) : null; },
+  abierto:()=>document.getElementById('mod-mob').classList.contains('open')});
+fvRegistrar('lic',{hoja:'licencias',
+  campos:{nombre:'lic-nombre',proveedor:'lic-proveedor',planVersion:'lic-plan',fechaInicio:'lic-inicio',fechaVencimiento:'lic-venc',costoAnual:'lic-costo',cantidadTotal:'lic-cupos',estado:'lic-estado',obs:'lic-obs'},
+  etiquetas:{nombre:'nombre',proveedor:'proveedor',planVersion:'plan',fechaInicio:'inicio',fechaVencimiento:'vencimiento',costoAnual:'costo',cantidadTotal:'cupos',estado:'estado',obs:'observaciones'},
+  fijos:()=>({codigo:document.getElementById('mod-licencia')._editCodigo||''}),
+  anterior:()=>{ const c=document.getElementById('mod-licencia')._editCodigo; return c ? (licencias.find(x=>x.codigo===c)||null) : null; },
+  abierto:()=>document.getElementById('mod-licencia').classList.contains('open')});
+fvRegistrar('persona',{hoja:'personas',
+  campos:{nombre:'per-nombre',cargo:'per-cargo',depto:'per-depto',email:'per-email',tel:'per-tel',espacioResponsable:'per-espacio',obs:'per-obs',estado:'per-estado'},
+  etiquetas:{nombre:'nombre',cargo:'cargo',depto:'departamento',email:'correo',tel:'teléfono',espacioResponsable:'espacio',obs:'observaciones',estado:'estado'},
+  fijos:()=>({codigo:document.getElementById('mod-persona')._editCodigo||''}),
+  anterior:()=>{ const c=document.getElementById('mod-persona')._editCodigo; return c ? (personas.find(x=>x.codigo===c)||null) : null; },
+  abierto:()=>document.getElementById('mod-persona').classList.contains('open')});
+fvRegistrar('espacio',{hoja:'espacios',
+  campos:{nombre:'esp-nombre',tipo:'esp-tipo',depto:'esp-depto',ubicacion:'esp-ubicacion',responsableNombre:'esp-responsable',capacidad:'esp-capacidad',obs:'esp-obs',estado:'esp-estado'},
+  etiquetas:{nombre:'nombre',tipo:'tipo',depto:'departamento',ubicacion:'ubicación',responsableNombre:'responsable',capacidad:'capacidad',obs:'observaciones',estado:'estado'},
+  fijos:()=>({codigo:document.getElementById('mod-espacio')._editCodigo||''}),
+  anterior:()=>{ const c=document.getElementById('mod-espacio')._editCodigo; return c ? (espacios.find(x=>x.codigo===c)||null) : null; },
+  abierto:()=>document.getElementById('mod-espacio').classList.contains('open')});
+fvRegistrar('depto',{hoja:'departamentos',
+  campos:{nombre:'dep-nombre',desc:'dep-desc',responsable:'dep-responsable',estado:'dep-estado'},
+  etiquetas:{nombre:'nombre',desc:'descripción',responsable:'responsable',estado:'estado'},
+  fijos:()=>({codigo:document.getElementById('mod-departamento')._editCodigo||''}),
+  anterior:()=>{ const c=document.getElementById('mod-departamento')._editCodigo; return c ? (departamentos.find(x=>x.codigo===c)||null) : null; },
+  abierto:()=>document.getElementById('mod-departamento').classList.contains('open')});
+fvRegistrar('usuario',{hoja:'usuarios',
+  campos:{username:'eu-username',rol:'eu-rol',nombre:'eu-nombre',email:'eu-email',tel:'eu-tel',depto:'eu-depto',cargo:'eu-cargo',estado:'eu-estado'},
+  etiquetas:{username:'usuario',rol:'rol',nombre:'nombre',email:'correo',tel:'teléfono',depto:'departamento',cargo:'cargo',estado:'estado'},
+  anterior:()=>{ const id=document.getElementById('eu-id').value; return id ? (usuarios.find(x=>x.username===id)||null) : null; },
+  abierto:()=>document.getElementById('mod-usuario').classList.contains('open')});
+
+// Aviso suave: compra futura = compra programada
+function _fvHintCompra(){
+  const c=document.getElementById('ea-compra'), h=document.getElementById('hint-ea-compra');
+  if(!c || !h) return;
+  h.style.display = (c.value && c.value>_fvHoyMas(0)) ? 'block' : 'none';
+}
+document.addEventListener('input', ev=>{ if(ev.target && ev.target.id==='ea-compra') _fvHintCompra(); });
+document.addEventListener('change', ev=>{ if(ev.target && ev.target.id==='ea-compra') _fvHintCompra(); });
+
+// Reapertura de un ticket cerrado: pide el motivo
+function _etActualizarReapertura(){
+  const wrap=document.getElementById('et-reap-wrap'); if(!wrap) return;
+  const id=document.getElementById('et-id').value;
+  const t=id ? tickets.find(x=>x.codigo===id) : null;
+  const reabre=!!(t && t.estado==='cerrado' && document.getElementById('et-estado').value!=='cerrado');
+  wrap.style.display = reabre ? 'block' : 'none';
+  if(!reabre){ document.getElementById('et-reap-motivo').value=''; _fvMarcar('et-reap-motivo',''); }
+}
+
+// Importación: errores del esquema por fila y lista de filas que el servidor rechazó
+function _impEsq(errs, hoja, reg){
+  if(errs.length) return;
+  const e=validarConEsquema(hoja, reg, null);
+  Object.keys(e).forEach(k=>errs.push(k+': '+e[k]));
+}
+function _impMostrarRech(previewId, rech){
+  if(!rech.length) return false;
+  const el=document.getElementById(previewId); if(!el) return false;
+  let h='<div style="background:var(--red-l);border:1px solid var(--red-m);border-radius:6px;padding:10px;margin-top:10px;font-size:12px;">'
+       +'<strong style="color:var(--red)">⚠ '+_escHtml(rech.length)+' fila(s) rechazadas por el servidor (no se guardaron):</strong><br>';
+  rech.slice(0,20).forEach(r=>{ h+='<em>'+_escHtml(r.nombre||'(sin nombre)')+'</em> — '+_escHtml(r.motivo)+'<br>'; });
+  if(rech.length>20) h+='...y '+_escHtml(rech.length-20)+' más.';
+  el.innerHTML=h+'</div>';
+  return true;
+}
+
 // Motivo legible de un fallo de escritura. TIMEOUT es ambiguo: la fila pudo guardarse.
 const _MSG_ERR_SERVIDOR={
   HISTORIAL_INVALIDO:'El historial del registro no es válido. Recarga la pantalla e intenta de nuevo.',
@@ -8102,10 +8520,13 @@ const _MSG_ERR_SERVIDOR={
   TERMINOS_PENDIENTES:'Debes aceptar los Términos de Uso y el Aviso de Privacidad antes de continuar.',
   VERSION_TERMINOS_INVALIDA:'La versión de los términos cambió. Cierra la sesión y vuelve a entrar para ver la vigente.',
   HISTORIAL_GUARDADO_DANADO:'El historial de este registro está dañado; avisa al administrador.',
-  HISTORIAL_LLENO:'El historial de este registro llegó a su límite; avisa al administrador.'
+  HISTORIAL_LLENO:'El historial de este registro llegó a su límite; avisa al administrador.',
+  VALIDACION:'Revisa los campos marcados.',
+  CONSENTIMIENTO_REQUERIDO:'Debes aceptar el Aviso de Privacidad para enviar el reporte.'
 };
 function _impMotivo(res){
   if(!res) return 'sin respuesta del servidor';
+  if(res.error==='VALIDACION' && res.campos && Object.keys(res.campos).length) return _fvTextoCampos(res.campos);
   if(_MSG_ERR_SERVIDOR[res.error]) return _MSG_ERR_SERVIDOR[res.error];
   if(res.error==='TIMEOUT') return 'sin confirmar por tiempo agotado: revise la lista ANTES de repetir (pudo guardarse)';
   return res.message||res.error||'error desconocido';
@@ -8117,6 +8538,7 @@ function _impMotivo(res){
 async function _guardarConfirmado(sheet, action, obj){
   if(!_isOnline) return apiPost(sheet, action, obj);
   const res = await apiPostAsync(sheet, action, obj);
+  if(res && res.error==='VALIDACION' && fvServidorPorHoja(sheet, res.campos)) throw new Error(_MSG_ERR_SERVIDOR.VALIDACION);
   if(!res || !res.ok) throw new Error(_impMotivo(res));
   return res;
 }
@@ -8303,6 +8725,7 @@ function procesarArchivoActivos(hojas){
     const vidaNum = obj.vida ? parseInt(obj.vida,10) : 0;
     if(obj.vida && isNaN(vidaNum)) errs.push('vida útil no es número');
 
+    _impEsq(errs,'activos',{nombre:obj.nombre,tipo:tipo||'',estado:estado||'',marca:obj.marca,modelo:obj.modelo,serial:obj.serial,ubicacion:obj.ubicacion,depto:obj.depto,compra:obj.compra,garantia:obj.garantia,valor:obj.valor?valorNum:'',vida:obj.vida,obs:obj.obs});
     if(errs.length){
       errores.push({fila:filaNum, nombre:obj.nombre||'(sin nombre)', errores:errs});
     } else {
@@ -8373,6 +8796,7 @@ async function ejecutarImportarActivos(){
 
   const statusEl = document.getElementById('import-activos-status');
   let ok=0, fail=0, primerError='';
+  const _impRech = [];
 
   // Obtener el contador actual de activos para asignar códigos
   let cntBase = 0;
@@ -8403,7 +8827,7 @@ async function ejecutarImportarActivos(){
       activos.push({...activo, historial:[{tipo:'Creación',desc:'Importado',fecha:ts(),usuario:session.nombre,color:'blue'}]});
       ok++;
     } else {
-      fail++;
+      fail++; _impRech.push({nombre:r.nombre||r.username, motivo:_impMotivo(res)});
       if(!primerError) primerError = _impMotivo(res);
     }
 
@@ -8420,7 +8844,7 @@ async function ejecutarImportarActivos(){
   // Recargar datos
   await loadFromSheets();
   showToast(fail ? `⚠ ${ok} activos importados, ${fail} fallaron (${primerError}). Revisa e intenta con los restantes.` : `✅ ${ok} activos importados y confirmados por el servidor`, fail ? '' : 'success');
-  cerrarImportarActivos();
+  if(!_impMostrarRech('import-activos-preview',_impRech)) cerrarImportarActivos();
 }
 
 // ── MODAL IMPORTAR USUARIOS ───────────────────────────────────────
@@ -8488,6 +8912,7 @@ function procesarArchivoUsuarios(hojas){
     else if(!ROLES.includes(_impNorm(obj.rol))) errs.push(`rol inválido: ${obj.rol}`);
     if(!obj.nombre) errs.push('nombre vacío');
     if(!obj.email || !obj.email.includes('@')) errs.push('email inválido');
+    _impEsq(errs,'usuarios',{username:(obj.username||'').toLowerCase(),rol:_impNorm(obj.rol),nombre:obj.nombre,email:obj.email,tel:obj.tel,depto:obj.depto,cargo:obj.cargo,estado:(obj.estado||'activo').toLowerCase()});
     if(errs.length){
       errores.push({fila:enc.filaEnc + 1 + i, nombre:obj.username||'?', errores:errs});
     } else {
@@ -8541,19 +8966,20 @@ async function ejecutarImportarUsuarios(){
   const btn=document.getElementById('import-usuarios-btn');
   btn.disabled=true; btn.textContent='Importando...';
   let ok=0,fail=0,primerError='';
+  const _impRech = [];
   for(const r of registros){
     // Verificar si ya existe
     if(usuarios.find(u=>u.username===r.username)){ fail++; if(!primerError) primerError='el usuario ya existe'; continue; }
     const res = await apiPostAsync('usuarios','insert',r);
     if(res && res.ok){ usuarios.push(r); ok++; }
-    else { fail++; if(!primerError) primerError=_impMotivo(res); }
+    else { fail++; _impRech.push({nombre:r.nombre||r.username, motivo:_impMotivo(res)}); if(!primerError) primerError = _impMotivo(res); }
   }
   audit('CREAR','Usuarios','MASIVO',`Importación masiva: ${ok} usuarios importados`);
   document.getElementById('import-usuarios-status').textContent=
     `✅ ${ok} usuarios importados${fail?` | ${fail} fallaron (${primerError})`:''}`;
   btn.textContent='Importar usuarios';
   showToast(fail ? `⚠ ${ok} usuarios importados, ${fail} fallaron (${primerError})` : `✅ ${ok} usuarios importados y confirmados`, fail ? '' : 'success');
-  cerrarImportarUsuarios();
+  if(!_impMostrarRech('import-usuarios-preview',_impRech)) cerrarImportarUsuarios();
   await loadFromSheets();
 }
 
@@ -8716,6 +9142,7 @@ function procesarArchivoMob(hojas){
     const valorNum = obj.valor ? parseFloat(String(obj.valor).replace(/[$\s,]/g,'')) : 0;
     if(obj.valor && isNaN(valorNum)) errs.push('valor no es número');
 
+    _impEsq(errs,'mobiliario',{nombre:obj.nombre,tipo:tipo||'',cantidad:cantidad,condicion,material,ubicacion:obj.ubicacion,depto:obj.depto,color:obj.color,valor:obj.valor?valorNum:'',obs:obj.obs});
     if(errs.length){
       errores.push({fila:enc.filaEnc + 1 + i, nombre:obj.nombre||'(sin descripción)', errores:errs});
     } else {
@@ -8775,6 +9202,7 @@ async function ejecutarImportarMob(){
   const st = document.getElementById('import-mob-status');
   btn.disabled = true; btn.textContent = 'Importando...';
   let ok = 0, fail = 0, primerError = '';
+  const _impRech = [];
 
   for(let i=0; i<registros.length; i++){
     const r = registros[i];
@@ -8790,7 +9218,7 @@ async function ejecutarImportarMob(){
     };
     const res = await apiPostAsync('mobiliario','insert',obj);
     if(res && res.ok) ok++;
-    else { fail++; if(!primerError) primerError = _impMotivo(res); }
+    else { fail++; _impRech.push({nombre:r.nombre||r.username, motivo:_impMotivo(res)}); if(!primerError) primerError = _impMotivo(res); }
     st.textContent = `Importando... ${i+1}/${registros.length} (${ok} confirmados, ${fail} errores)`;
   }
 
@@ -8802,7 +9230,7 @@ async function ejecutarImportarMob(){
   }catch(e){ /* la lista se refresca al recargar */ }
 
   btn.textContent = 'Importar mobiliario';
-  cerrarImportarMob();
+  if(!_impMostrarRech('import-mob-preview',_impRech)) cerrarImportarMob();
   renderMobiliario();
   showToast(fail ? `⚠ ${ok} elementos importados, ${fail} fallaron (${primerError}). Revisa e intenta con los restantes.` : `✅ ${ok} elementos de mobiliario importados y confirmados`, fail ? '' : 'success');
 }
@@ -8943,6 +9371,7 @@ function procesarArchivoDep(hojas){
       else if(vistos.has(n)) errs.push(`repetido en el archivo (ya aparece en la fila ${vistos.get(n)})`);
     }
 
+    _impEsq(errs,'departamentos',{nombre:obj.nombre,desc:obj.desc,responsable,estado});
     if(errs.length){
       errores.push({fila:filaNum, nombre:obj.nombre||'(sin nombre)', errores:errs});
     } else {
@@ -8999,13 +9428,14 @@ async function ejecutarImportarDep(){
   const st = document.getElementById('import-dep-status');
   btn.disabled = true; btn.textContent = 'Importando...';
   let ok = 0, fail = 0, primerError = '';
+  const _impRech = [];
 
   for(let i=0; i<registros.length; i++){
     const r = registros[i];
     const obj = { codigo:'', nombre:r.nombre, desc:r.desc, responsable:r.responsable, estado:r.estado, fechaCreacion:ts() };
     const res = await apiPostAsync('departamentos','insert',obj);
     if(res && res.ok) ok++;
-    else { fail++; if(!primerError) primerError = _impMotivo(res); }
+    else { fail++; _impRech.push({nombre:r.nombre||r.username, motivo:_impMotivo(res)}); if(!primerError) primerError = _impMotivo(res); }
     st.textContent = `Importando... ${i+1}/${registros.length} (${ok} confirmados, ${fail} errores)`;
   }
 
@@ -9016,7 +9446,7 @@ async function ejecutarImportarDep(){
   }catch(e){ /* la lista se refresca al recargar */ }
 
   btn.textContent = 'Importar departamentos';
-  cerrarImportarDep();
+  if(!_impMostrarRech('import-dep-preview',_impRech)) cerrarImportarDep();
   buildDataLists();
   renderDepartamentos();
   showToast(fail ? `⚠ ${ok} departamentos importados, ${fail} fallaron (${primerError}). Revisa e intenta con los restantes.` : `✅ ${ok} departamentos importados y confirmados`, fail ? '' : 'success');
@@ -9184,6 +9614,7 @@ function procesarArchivoPer(hojas){
       else if(vistos.has(n)) errs.push(`repetida en el archivo (ya aparece en la fila ${vistos.get(n)})`);
     }
 
+    _impEsq(errs,'personas',{nombre:obj.nombre,cargo:obj.cargo,depto,email:obj.email,tel:obj.tel,obs:obj.obs,estado});
     if(errs.length){
       errores.push({fila:filaNum, nombre:obj.nombre||'(sin nombre)', errores:errs});
     } else {
@@ -9240,6 +9671,7 @@ async function ejecutarImportarPer(){
   const st = document.getElementById('import-per-status');
   btn.disabled = true; btn.textContent = 'Importando...';
   let ok = 0, fail = 0, primerError = '';
+  const _impRech = [];
 
   for(let i=0; i<registros.length; i++){
     const r = registros[i];
@@ -9247,7 +9679,7 @@ async function ejecutarImportarPer(){
                   espacioResponsable:'', obs:r.obs, estado:r.estado, fechaCreacion:ts() };
     const res = await apiPostAsync('personas','insert',obj);
     if(res && res.ok) ok++;
-    else { fail++; if(!primerError) primerError = _impMotivo(res); }
+    else { fail++; _impRech.push({nombre:r.nombre||r.username, motivo:_impMotivo(res)}); if(!primerError) primerError = _impMotivo(res); }
     st.textContent = `Importando... ${i+1}/${registros.length} (${ok} confirmadas, ${fail} errores)`;
   }
 
@@ -9258,7 +9690,7 @@ async function ejecutarImportarPer(){
   }catch(e){ /* la lista se refresca al recargar */ }
 
   btn.textContent = 'Importar personas';
-  cerrarImportarPer();
+  if(!_impMostrarRech('import-per-preview',_impRech)) cerrarImportarPer();
   buildDataLists();
   renderPersonas();
   showToast(fail ? `⚠ ${ok} personas importadas, ${fail} fallaron (${primerError}). Revisa e intenta con las restantes.` : `✅ ${ok} personas importadas y confirmadas`, fail ? '' : 'success');
@@ -9452,6 +9884,7 @@ function procesarArchivoEsp(hojas){
       else if(vistos.has(n)) errs.push(`repetido en el archivo (ya aparece en la fila ${vistos.get(n)})`);
     }
 
+    _impEsq(errs,'espacios',{nombre:obj.nombre,tipo,depto,ubicacion:obj.ubicacion,responsableNombre,responsableEmail,capacidad,obs:obj.obs,estado});
     if(errs.length){
       errores.push({fila:filaNum, nombre:obj.nombre||'(sin nombre)', errores:errs});
     } else {
@@ -9508,6 +9941,7 @@ async function ejecutarImportarEsp(){
   const st = document.getElementById('import-esp-status');
   btn.disabled = true; btn.textContent = 'Importando...';
   let ok = 0, fail = 0, primerError = '';
+  const _impRech = [];
 
   for(let i=0; i<registros.length; i++){
     const r = registros[i];
@@ -9516,7 +9950,7 @@ async function ejecutarImportarEsp(){
                   capacidad:r.capacidad, obs:r.obs, estado:r.estado, fechaCreacion:ts() };
     const res = await apiPostAsync('espacios','insert',obj);
     if(res && res.ok) ok++;
-    else { fail++; if(!primerError) primerError = _impMotivo(res); }
+    else { fail++; _impRech.push({nombre:r.nombre||r.username, motivo:_impMotivo(res)}); if(!primerError) primerError = _impMotivo(res); }
     st.textContent = `Importando... ${i+1}/${registros.length} (${ok} confirmados, ${fail} errores)`;
   }
 
@@ -9527,7 +9961,7 @@ async function ejecutarImportarEsp(){
   }catch(e){ /* la lista se refresca al recargar */ }
 
   btn.textContent = 'Importar espacios';
-  cerrarImportarEsp();
+  if(!_impMostrarRech('import-esp-preview',_impRech)) cerrarImportarEsp();
   buildDataLists();
   renderEspacios();
   showToast(fail ? `⚠ ${ok} espacios importados, ${fail} fallaron (${primerError}). Revisa e intenta con los restantes.` : `✅ ${ok} espacios importados y confirmados`, fail ? '' : 'success');
@@ -9854,7 +10288,7 @@ function openMob(codigo){
   document.getElementById('mob-material').value  = m.material||'';
   document.getElementById('mob-color').value     = m.color||'';
   document.getElementById('mob-fecha').value     = m.fecha||'';
-  document.getElementById('mob-valor').value     = m.valor||0;
+  document.getElementById('mob-valor').value     = m.valor||'';
   document.getElementById('mob-foto').value      = m.foto||'';
   document.getElementById('mob-obs').value       = m.obs||'';
   document.getElementById('mob-motivo').value    = '';
@@ -9886,6 +10320,8 @@ function _mobActualizarModo(){
 // ── GUARDAR ───────────────────────────────────────────────────────
 async function guardarMobiliario(){
   if(window._guardandoMob){ showToast('Ya se está guardando, espera un momento...',''); return; }
+  if(!fvTodo('mob')) return; // R2: reglas del servidor (esquemas)
+  const _borMob = fvBorrador('mob');
   const nombre    = document.getElementById('mob-nombre').value.trim();
   const tipo      = document.getElementById('mob-tipo').value;
   const condicion = document.getElementById('mob-condicion').value;
@@ -9948,6 +10384,7 @@ async function guardarMobiliario(){
       if(idx>=0) mobiliario[idx] = nuevoReg;
       guardarOptimista('mobiliario', nuevoReg, {
         accion:'update', nombre:editCodigo, key:'edit-mob-'+editCodigo, vistas:['mobiliario','dashboard'],
+        fvClave:'mob', borrador:_borMob, revertir:()=>{ const i=mobiliario.indexOf(nuevoReg); if(i>=0) mobiliario[i]=prev; }, reabrir:()=>openMob(editCodigo),
         payload:()=>_limpiarReg(nuevoReg),
         alConfirmar: async()=>{ audit('EDITAR','Mobiliario',editCodigo,det); showToast('✅ Elemento actualizado','success'); }
       });
@@ -9975,6 +10412,7 @@ async function guardarMobiliario(){
     guardarOptimista('mobiliario', temps[0], {
       registros:temps, accion:'insert', nombre:(nRegistros>1?'los '+nRegistros+' registros':'el elemento'), key:temps[0].codigo,
       vistas:['mobiliario','dashboard'],
+      fvClave:'mob', borrador:_borMob, reabrir:()=>{ mobiliario=mobiliario.filter(m=>!temps.includes(m)); openMob(null); },
       enviar: async(e)=>{
         let falla = null;
         for(const o of temps){
@@ -9994,7 +10432,7 @@ async function guardarMobiliario(){
           await _mobRecargar(); // trae los confirmados con su código real y reinyecta los pendientes
           const reales = mobiliario.filter(m=>!antes.has(m.codigo) && !m._estadoGuardado).map(m=>m.codigo);
           reales.forEach(c=>{ audit('CREAR','Mobiliario',c,'Registrado por '+session.nombre+': '+nombre+(modo==='lote'?' (lote de '+cantidad+')':'')); antes.add(c); previos.push(c); });
-          return {ok:false, error:falla.error, message:'Solo se confirmaron '+hechos.size+' de '+temps.length+' registros ('+((falla.message||falla.error)||'sin respuesta')+'); los demás siguen marcados para reintentar'};
+          return {ok:false, error:falla.error, campos:falla.campos, message:'Solo se confirmaron '+hechos.size+' de '+temps.length+' registros ('+((falla.message||falla.error)||'sin respuesta')+'); los demás siguen marcados para reintentar'};
         }
         return {ok:true};
       },
@@ -10210,6 +10648,7 @@ function openLicencia(codigo){
 
 // ── GUARDAR ───────────────────────────────────────────────────────
 async function guardarLicencia(){
+  if(!fvTodo('lic')) return; // R2: reglas del servidor (esquemas)
   const nombre    = document.getElementById('lic-nombre').value.trim();
   const proveedor = document.getElementById('lic-proveedor').value.trim();
   const venc      = document.getElementById('lic-venc').value;
@@ -10758,6 +11197,7 @@ function openPersona(codigo){
 
 // ── GUARDAR PERSONA ───────────────────────────────────────────────
 async function guardarPersona(){
+  if(!fvTodo('persona')) return; // R2
   const nombre = document.getElementById('per-nombre').value.trim();
   const email  = document.getElementById('per-email').value.trim();
   if(!nombre){ showToast('El nombre es obligatorio',''); return; }
@@ -10944,6 +11384,7 @@ function openEspacio(codigo){
 
 // ── GUARDAR ESPACIO ───────────────────────────────────────────────
 async function guardarEspacio(){
+  if(!fvTodo('espacio')) return; // R2
   const nombre = document.getElementById('esp-nombre').value.trim();
   if(!nombre){ showToast('El nombre del espacio es obligatorio',''); return; }
   const editCod = document.getElementById('mod-espacio')._editCodigo;
@@ -11082,6 +11523,7 @@ function openDepartamento(codigo){
 }
 
 async function guardarDepartamento(){
+  if(!fvTodo('depto')) return; // R2
   const nombre = document.getElementById('dep-nombre').value.trim();
   if(!nombre){ showToast('El nombre es obligatorio',''); return; }
   const editCod = document.getElementById('mod-departamento')._editCodigo;

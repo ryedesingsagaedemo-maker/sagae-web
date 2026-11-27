@@ -131,6 +131,9 @@ html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFo
 .form-label{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;display:block;}
 .form-input,.form-select,.form-textarea{width:100%;padding:12px 14px;border-radius:var(--r-md);border:1.5px solid var(--border2);background:#fff;font-size:15px;font-family:inherit;color:var(--text);outline:none;transition:border-color .15s;-webkit-appearance:none;}
 .form-input:focus,.form-select:focus,.form-textarea:focus{border-color:var(--navy);}
+.f-err{display:none;font-size:12px;color:#B3401D;margin-top:4px;padding:4px 8px;background:#FFF5F5;border-radius:6px;border-left:3px solid #D85A30;}
+.f-err.show{display:block;}
+.fv-bad{border-color:#D85A30!important;background:#FFF5F5!important;}
 .form-textarea{resize:none;height:90px;line-height:1.5;}
 .form-select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23888' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;}
 .range-wrap{display:flex;align-items:center;gap:12px;}
@@ -463,6 +466,7 @@ html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFo
     </div>
     <div class="form-group"><label class="form-label">Modelo</label><input class="form-input" id="mob-ea-modelo" placeholder="Ej: Latitude 5420"></div>
     <div class="form-group"><label class="form-label">Serial</label><input class="form-input" id="mob-ea-serial" placeholder="Número de serie"></div>
+    <div class="form-group"><label class="form-label">Valor ($) *</label><input class="form-input" type="number" id="mob-ea-valor" min="0.01" step="0.01" inputmode="decimal" data-nn="1" placeholder="0.00"></div>
     <div class="form-group">
       <label class="form-label">🏷️ Departamento</label>
       <select class="form-select" id="mob-ea-depto" onchange="onChangeDeptomobile(this.value)"><option value="">— Sin departamento —</option></select>
@@ -522,7 +526,11 @@ html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFo
     <div class="form-group"><label class="form-label">Responsable</label><select class="form-select" id="mt-resp"><option value="Sin asignar">— Sin asignar —</option></select></div>
     <div class="form-group"><label class="form-label">Tipo</label><select class="form-select" id="mt-tipo" onchange="_mtActualizarBloqueRecepcion()"><option value="incidencia">Incidencia</option><option value="mantenimiento">Mantenimiento</option><option value="solicitud">Solicitud</option><option value="tarea">Tarea</option></select></div>
     <div class="form-group"><label class="form-label">Prioridad</label><select class="form-select" id="mt-prior"><option value="urgente">Urgente</option><option value="importante" selected>Importante</option><option value="normal">Normal</option></select></div>
-    <div class="form-group"><label class="form-label">Estado</label><select class="form-select" id="mt-estado" onchange="_mtActualizarBloqueDevolucion()"><option value="abierto">Abierto</option><option value="progreso">En progreso</option><option value="revision">En revisión</option><option value="cerrado">Cerrado</option></select></div>
+    <div class="form-group"><label class="form-label">Estado</label><select class="form-select" id="mt-estado" onchange="_mtActualizarBloqueDevolucion();_mtActualizarReapertura()"><option value="abierto">Abierto</option><option value="progreso">En progreso</option><option value="revision">En revisión</option><option value="cerrado">Cerrado</option></select></div>
+    <div class="form-group" id="mt-reap-wrap" style="display:none;background:var(--amber-l);border:1px solid var(--amber-m);border-radius:var(--r-md);padding:12px;">
+      <label class="form-label">Motivo de la reapertura *</label>
+      <input class="form-input" id="mt-reap-motivo" maxlength="300" placeholder="¿Por qué se vuelve a abrir este ticket cerrado?" oninput="if(this.value.trim())_fvMarcar('mt-reap-motivo','')">
+    </div>
     <div class="form-group">
       <label class="form-label">Avance: <span id="mt-avance-val">0</span>%</label>
       <div class="range-wrap"><input type="range" class="range-input" id="mt-avance" min="0" max="100" value="0" oninput="document.getElementById('mt-avance-val').textContent=this.value"></div>
@@ -564,7 +572,7 @@ html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFo
         <div class="form-group"><label class="form-label">Piezas necesarias *</label><textarea class="form-textarea" id="mt-piezas-desc" rows="2" placeholder="Ej: 1 disco SSD 256GB..."></textarea></div>
         <div class="form-group"><label class="form-label">Urgencia</label><select class="form-select" id="mt-piezas-urgencia"><option value="normal">🟢 Normal</option><option value="importante">🟡 Importante</option><option value="urgente">🔴 Urgente</option></select></div>
         <div class="form-group"><label class="form-label">Correo del encargado de compras *</label><input class="form-input" type="email" id="mt-piezas-email" placeholder="compras@colegio.edu"></div>
-        <div class="form-group"><label class="form-label">Presupuesto estimado (opcional)</label><input class="form-input" type="number" id="mt-piezas-presupuesto" placeholder="0.00"></div>
+        <div class="form-group"><label class="form-label">Presupuesto estimado (opcional)</label><input class="form-input" type="number" id="mt-piezas-presupuesto" placeholder="0.00" step="0.01" min="0" inputmode="decimal" data-nn="1"></div>
         <div style="font-size:11px;color:var(--text3);">La solicitud quedará registrada en el historial de este ticket <span id="mt-piezas-nota-activo"></span> y se notificará por correo al encargado de compras.</div>
       </div>
     </div>
@@ -596,7 +604,7 @@ html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFo
       <div id="mm-fotos-limite-note" style="display:none;margin-top:6px;font-size:11px;color:#666;">Máximo de 3 fotos por evento alcanzado.</div>
     </div>
     <div class="form-group"><label class="form-label">Fecha</label><input class="form-input" type="date" id="mm-fecha"></div>
-    <div class="form-group"><label class="form-label">Costo ($)</label><input class="form-input" type="number" id="mm-costo" placeholder="0.00"></div>
+    <div class="form-group"><label class="form-label">Costo ($)</label><input class="form-input" type="number" id="mm-costo" placeholder="0.00" step="0.01" min="0" inputmode="decimal" data-nn="1"></div>
     <div style="background:#EBF1FF;border-radius:12px;padding:14px;margin-bottom:12px;border:1px solid #C7D9F5">
       <div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:4px">📧 Correo del responsable del equipo</div>
       <div style="font-size:11px;color:var(--text3);margin-bottom:8px">Opcional — para notificarle que su equipo está en IT</div>
@@ -611,7 +619,7 @@ html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFo
         <div class="form-group"><label class="form-label">Piezas necesarias *</label><textarea class="form-textarea" id="mm-piezas-desc" rows="2" placeholder="Ej: 1 disco SSD 256GB..."></textarea></div>
         <div class="form-group"><label class="form-label">Urgencia</label><select class="form-select" id="mm-piezas-urgencia"><option value="normal">🟢 Normal</option><option value="importante">🟡 Importante</option><option value="urgente">🔴 Urgente</option></select></div>
         <div class="form-group"><label class="form-label">Correo del encargado de compras *</label><input class="form-input" type="email" id="mm-piezas-email" placeholder="compras@colegio.edu"></div>
-        <div class="form-group"><label class="form-label">Presupuesto estimado ($)</label><input class="form-input" type="number" id="mm-piezas-presupuesto" placeholder="0.00"></div>
+        <div class="form-group"><label class="form-label">Presupuesto estimado ($)</label><input class="form-input" type="number" id="mm-piezas-presupuesto" placeholder="0.00" step="0.01" min="0" inputmode="decimal" data-nn="1"></div>
         <div style="font-size:11px;color:var(--text3)">📧 Se enviará correo al encargado y quedará en el historial.</div>
       </div>
     </div>
@@ -1386,6 +1394,291 @@ function _generarRequestId(){
 function _generarOpId(){
   return 'op'+Date.now().toString(36)+_aleatorioHex(8);
 }
+// ═══════════════════════════════════════════════════════════════════
+// R2 "datos válidos" (v12): validación en pantalla con los ESQUEMAS que publica el servidor
+// (GET ?action=config -> esquemas). Es la MISMA tabla que aplica el servidor: aquí solo se
+// adelanta el aviso. Si los esquemas no llegan (servidor viejo) no se bloquea nada y el servidor decide.
+// ═══════════════════════════════════════════════════════════════════
+let _ESQUEMAS = null;
+// Reglas solo de pantalla (no las publica el servidor): se usan únicamente cuando los esquemas sí llegaron.
+const _ESQ_LOCAL = {
+  tickets:{
+    presupuesto:{tipo:'numero',min:0,dec:2,msg:'El presupuesto no puede ser negativo.'},
+    emailCompras:{tipo:'correo',msg:'Correo no válido.'},
+    emailResp:{tipo:'correo',msg:'Correo no válido.'}
+  },
+  mantenimiento:{
+    desc:{tipo:'texto',req:true,min:3,max:2000,msg:'Describe el mantenimiento (3 a 2000 caracteres).'},
+    costo:{tipo:'numero',min:0,dec:2,msg:'El costo no puede ser negativo.'},
+    fecha:{tipo:'fecha',fechaMin:'1990-01-01',fechaMaxDias:1,msg:'Fecha no válida (no puede ser futura).'}, // 1 día de margen por la hora UTC del navegador
+    emailResp:{tipo:'correo',msg:'Correo no válido.'},
+    emailCompras:{tipo:'correo',msg:'Correo no válido.'},
+    presupuesto:{tipo:'numero',min:0,dec:2,msg:'El presupuesto no puede ser negativo.'}
+  }
+};
+function _fvRecibirConfig(d){
+  if(d && d.ok && d.esquemas && typeof d.esquemas==='object' && !Array.isArray(d.esquemas)) _ESQUEMAS = d.esquemas;
+}
+async function _fvCargarEsquemas(){
+  if(_ESQUEMAS) return;
+  try{ const r = await fetch(API+'?action=config&t='+Date.now(),{mode:'cors'}); _fvRecibirConfig(await r.json()); }catch(e){}
+}
+function _fvLista(h){
+  try{
+    switch(h){
+      case 'activos': return activos||[];
+      case 'tickets': return tickets||[];
+      case 'mobiliario': return mobiliario||[];
+      case 'licencias': return licencias||[];
+      case 'personas': return personas||[];
+      case 'espacios': return espacios||[];
+      case 'departamentos': return departamentos||[];
+      case 'usuarios': return usuarios||[];
+    }
+  }catch(e){}
+  return [];
+}
+function _fvNorm(v){ if(v==null) return ''; const s=String(v).trim(); return s==='—' ? '' : s; }
+function _fvNum(s){ s=String(s).trim().replace(/^\+/,''); if(!/^-?\d+([.,]\d+)?$/.test(s)) return NaN; return Number(s.replace(',','.')); }
+function _fvIgual(a,b){
+  a=_fvNorm(a); b=_fvNorm(b);
+  if(a===b) return true;
+  if(a!=='' && b!==''){ const x=_fvNum(a), y=_fvNum(b); if(!isNaN(x)&&!isNaN(y)) return x===y; }
+  // un 0 guardado se muestra como casilla vacía: no cuenta como cambio
+  if((a==='' && _fvNum(b)===0) || (b==='' && _fvNum(a)===0)) return true;
+  return false;
+}
+function _fvEsFecha(s){
+  const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s); if(!m) return false;
+  const d=new Date(Date.UTC(+m[1],+m[2]-1,+m[3]));
+  return d.getUTCFullYear()===+m[1] && d.getUTCMonth()===+m[2]-1 && d.getUTCDate()===+m[3];
+}
+function _fvHoyMas(n){
+  const d=new Date(); d.setDate(d.getDate()+n);
+  const p=x=>String(x).padStart(2,'0');
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());
+}
+function _fvReglas(hoja){
+  if(!_ESQUEMAS) return null;
+  return Object.assign({}, _ESQ_LOCAL[hoja]||{}, _ESQUEMAS[hoja]||{});
+}
+// Devuelve el mensaje de error de UN campo, o '' si está bien.
+function _fvCampo(hoja, campo, r, reg){
+  const v=_fvNorm(reg[campo]);
+  const msg=def=>r.msg||def;
+  if(v==='') return r.req ? msg('Este campo es obligatorio.') : '';
+  const t=r.tipo||'texto';
+  if(t==='texto' || t==='codigoRef'){
+    if(r.min!=null && v.length<r.min) return msg('Escribe al menos '+r.min+' caracteres.');
+    if(r.max!=null && v.length>r.max) return msg('Máximo '+r.max+' caracteres.');
+  }else if(t==='entero' || t==='numero'){
+    const n=_fvNum(v);
+    if(isNaN(n) || (t==='entero' && !Number.isInteger(n))) return msg(t==='entero'?'Escribe un número entero.':'Escribe un número válido.');
+    if(r.min!=null && n<r.min) return msg('El valor mínimo es '+r.min+'.');
+    if(r.max!=null && n>r.max) return msg('El valor máximo es '+r.max+'.');
+    if(r.gt!=null && !(n>r.gt)) return msg('Debe ser mayor que '+r.gt+'.');
+    if(r.dec!=null){ const dec=v.replace(',','.').split('.')[1]; if(dec && dec.length>r.dec) return msg('Máximo '+r.dec+' decimales.'); }
+  }else if(t==='fecha'){
+    if(!_fvEsFecha(v)) return msg('Fecha no válida (use AAAA-MM-DD).');
+    if(r.fechaMin && v<r.fechaMin) return msg('La fecha no puede ser anterior a '+r.fechaMin+'.');
+    if(r.fechaMaxDias!=null && v>_fvHoyMas(r.fechaMaxDias)) return msg('La fecha es demasiado lejana.');
+    if(r.gteCampo){ const o=_fvNorm(reg[r.gteCampo]); if(_fvEsFecha(o) && v<o) return r.msgCruce||msg('No puede ser anterior a '+r.gteCampo+'.'); }
+    if(r.lteCampo){ const o=_fvNorm(reg[r.lteCampo]); if(_fvEsFecha(o) && v>o) return r.msgCruce||msg('No puede ser posterior a '+r.lteCampo+'.'); }
+  }else if(t==='correo'){
+    if(!/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]{2,}$/.test(v) || (r.max!=null && v.length>r.max)) return msg('Correo no válido.');
+  }else if(t==='telefono'){
+    if(v.length<7 || v.length>20 || !/^[0-9+\-() ]+$/.test(v)) return msg('Teléfono no válido (7 a 20 caracteres: números, + - ( ) y espacios).');
+  }
+  if(r.patron){ let ok=true; try{ ok=new RegExp(r.patron).test(v); }catch(e){} if(!ok) return msg('Formato no válido.'); }
+  if(r.valores && Array.isArray(r.valores) && !r.valores.includes(v)) return msg('Valor no permitido.');
+  if(r.unico){
+    const norm=s=>{ s=_fvNorm(s); return r.normal==='sinEspaciosMinusculas' ? s.replace(/\s+/g,'').toLowerCase() : s.toLowerCase(); };
+    const mio = hoja==='usuarios' ? '' : _fvNorm(reg.codigo);
+    const dup=_fvLista(hoja).find(x=>x && (x.estado!=='eliminado' || r.unicoConEliminados) && (hoja==='usuarios' || !mio || x.codigo!==mio) && norm(x[campo])===norm(v));
+    if(dup) return hoja==='usuarios' ? ((r.msgUnico||'Ese usuario ya existe')+'.') : ('Ya existe en '+(dup.codigo||'otro registro')+'.');
+  }
+  if(r.ref){
+    const L=_fvLista(r.ref);
+    if(L.length && !L.some(x=>x && x.codigo===v)) return msg('No existe ('+v+').');
+  }
+  return '';
+}
+// validarConEsquema(hoja, registro, registroAnterior) -> { campo: mensaje }
+// En edición (registroAnterior) solo se valida lo que cambia. Sin esquemas no bloquea nada.
+function validarConEsquema(hoja, registro, registroAnterior){
+  const reglas=_fvReglas(hoja); const errs={};
+  if(!reglas || !registro) return errs;
+  Object.keys(reglas).forEach(campo=>{
+    if(!(campo in registro)) return;                       // el formulario no tiene ese campo
+    if(registroAnterior && _fvIgual(registro[campo], registroAnterior[campo])) return;
+    const m=_fvCampo(hoja, campo, reglas[campo], registro);
+    if(m) errs[campo]=m;
+  });
+  return errs;
+}
+
+// ── Interfaz: mensaje debajo del campo + borde rojo ──
+const _FV = {}, _FV_ID = {};
+// cfg: {hoja, campos:{campo:idInput}, etiquetas:{campo:'Nombre'}, extras:[ids a guardar en el borrador],
+//       ocultos:{campo:idContenedor}, leer?:()=>extra, anterior:()=>registro|null}
+function fvRegistrar(clave, cfg){
+  _FV[clave]=cfg;
+  Object.keys(cfg.campos).forEach(c=>{ _FV_ID[cfg.campos[c]]={clave:clave, campo:c}; });
+}
+function fvLeer(clave){
+  const cfg=_FV[clave], o={};
+  Object.keys(cfg.campos).forEach(c=>{
+    const el=document.getElementById(cfg.campos[c]); if(!el) return;
+    const w=cfg.ocultos&&cfg.ocultos[c] ? document.getElementById(cfg.ocultos[c]) : null;
+    if(w && w.style.display!=='block') return;              // campo de un bloque que no está a la vista
+    o[c]=el.value;
+  });
+  if(cfg.fijos) Object.assign(o, cfg.fijos());
+  return o;
+}
+function fvExtras(clave){
+  const cfg=_FV[clave], o={};
+  (cfg.extras||[]).forEach(id=>{ const el=document.getElementById(id); if(el) o[id]=el.value; });
+  return o;
+}
+function fvBorrador(clave){ return {campos:fvLeer(clave), extras:fvExtras(clave)}; }
+function fvLlenar(clave, bor){
+  const cfg=_FV[clave]; if(!cfg || !bor) return;
+  Object.keys(cfg.campos).forEach(c=>{
+    if(!bor.campos || !(c in bor.campos)) return;
+    const el=document.getElementById(cfg.campos[c]); if(el) el.value=bor.campos[c];
+  });
+  Object.keys(bor.extras||{}).forEach(id=>{ const el=document.getElementById(id); if(el) el.value=bor.extras[id]; });
+}
+function _fvMarcar(id, msg){
+  const el=document.getElementById(id); if(!el) return;
+  let m=document.getElementById('err-'+id);
+  if(msg){
+    if(!m){ m=document.createElement('div'); m.id='err-'+id; m.className='f-err'; m.setAttribute('role','alert'); el.insertAdjacentElement('afterend',m); }
+    m.textContent='⚠ '+msg; m.classList.add('show'); el.classList.add('fv-bad'); el.setAttribute('aria-invalid','true');
+  }else{
+    if(m) m.classList.remove('show');
+    el.classList.remove('fv-bad'); el.classList.remove('error'); el.removeAttribute('aria-invalid');
+  }
+}
+function _fvErrores(clave){
+  const cfg=_FV[clave];
+  const e=validarConEsquema(cfg.hoja, fvLeer(clave), cfg.anterior?cfg.anterior():null);
+  const f={}; Object.keys(e).forEach(c=>{ if(cfg.campos[c]) f[c]=e[c]; });
+  return f;
+}
+// Valida un campo (al salir de él) y los que dependen de él (fechas relacionadas).
+function fvCampo(clave, campo){
+  const cfg=_FV[clave]; if(!cfg || !_ESQUEMAS) return;
+  const errs=_fvErrores(clave), reglas=_fvReglas(cfg.hoja)||{};
+  const afectados=[campo];
+  Object.keys(reglas).forEach(c=>{ if(cfg.campos[c] && (reglas[c].gteCampo===campo || reglas[c].lteCampo===campo)) afectados.push(c); });
+  afectados.forEach(c=>{
+    const id=cfg.campos[c]; if(!id) return;
+    const v=_fvNorm((fvLeer(clave))[c]);
+    _fvMarcar(id, (c===campo || v!=='') ? (errs[c]||'') : '');
+  });
+}
+// Valida todo el formulario. Devuelve true si se puede guardar.
+function fvTodo(clave){
+  const cfg=_FV[clave]; if(!cfg) return true;
+  if(!_ESQUEMAS) return true;
+  const errs=_fvErrores(clave), malos=[];
+  Object.keys(cfg.campos).forEach(c=>{
+    const m=errs[c]||''; _fvMarcar(cfg.campos[c], m);
+    if(m) malos.push(c);
+  });
+  if(!malos.length) return true;
+  const el=document.getElementById(cfg.campos[malos[0]]); if(el && el.focus) try{ el.focus(); }catch(e){}
+  const et=malos.map(c=>(cfg.etiquetas&&cfg.etiquetas[c])||c);
+  showToast('Falta o corrige: '+et.join(', ')+'. '+errs[malos[0]],'error');
+  return false;
+}
+// Marca los campos que el servidor rechazó (respuesta VALIDACION).
+function fvAplicarServidor(clave, campos){
+  const cfg=_FV[clave]; if(!cfg || !campos) return false;
+  let primero=null; const sueltos=[];
+  Object.keys(campos).forEach(c=>{
+    const id=cfg.campos[c];
+    if(id){ _fvMarcar(id, String(campos[c]||'Valor no válido.')); if(!primero) primero=id; }
+    else sueltos.push((cfg.etiquetas&&cfg.etiquetas[c]||c)+': '+campos[c]);
+  });
+  if(primero){ const el=document.getElementById(primero); if(el&&el.focus) try{ el.focus(); }catch(e){} }
+  if(sueltos.length) showToast('El servidor rechazó: '+sueltos.join(' · '),'error');
+  return !!primero || sueltos.length>0;
+}
+// Cuando la ventana sigue abierta (formularios sin guardado optimista): marca según la hoja.
+function fvServidorPorHoja(hoja, campos){
+  const k=Object.keys(_FV).find(x=>_FV[x].hoja===hoja && _FV[x].abierto && _FV[x].abierto());
+  return k ? fvAplicarServidor(k, campos) : false;
+}
+function fvLimpiar(clave){
+  const cfg=_FV[clave]; if(!cfg) return;
+  Object.keys(cfg.campos).forEach(c=>_fvMarcar(cfg.campos[c],''));
+}
+// Texto legible de un VALIDACION del servidor (importaciones, mensajes)
+function _fvTextoCampos(campos){
+  return Object.keys(campos||{}).map(k=>k+': '+campos[k]).join('; ');
+}
+
+// ── Eventos delegados: al salir del campo, al escribir, números sin signo, serie en vivo ──
+let _fvTimer = null;
+document.addEventListener('focusout', ev=>{
+  const x=_FV_ID[ev.target && ev.target.id]; if(x && ev.target.offsetParent!==null) fvCampo(x.clave, x.campo); // solo si el campo está a la vista
+});
+document.addEventListener('change', ev=>{
+  const x=_FV_ID[ev.target && ev.target.id]; if(x && ev.target.offsetParent!==null) fvCampo(x.clave, x.campo);
+});
+document.addEventListener('input', ev=>{
+  const el=ev.target; if(!el || !el.id) return;
+  if(el.dataset && el.dataset.nn!==undefined && typeof el.value==='string' && el.value.charAt(0)==='-') el.value=el.value.replace(/-/g,'');
+  const x=_FV_ID[el.id]; if(!x) return;
+  const cfg=_FV[x.clave]; const r=(_fvReglas(cfg.hoja)||{})[x.campo];
+  if(r && r.unico){                                       // serie/usuario repetido: aviso en vivo con 400 ms de espera
+    clearTimeout(_fvTimer);
+    _fvTimer=setTimeout(()=>fvCampo(x.clave,x.campo),400);
+  }else if(el.classList.contains('fv-bad')){              // ya tenía error: se quita en cuanto queda bien
+    fvCampo(x.clave,x.campo);
+  }
+});
+document.addEventListener('keydown', ev=>{
+  const el=ev.target;
+  if(!el || !el.dataset || el.dataset.nn===undefined) return;
+  if(ev.key==='-'||ev.key==='+'||ev.key==='e'||ev.key==='E') ev.preventDefault();
+  if(el.dataset.int!==undefined && (ev.key==='.'||ev.key===',')) ev.preventDefault();
+});
+
+// Formularios del móvil registrados (campo del esquema -> id del campo en pantalla)
+fvRegistrar('mticket',{hoja:'tickets',
+  campos:{titulo:'mt-titulo',activoId:'mt-activo',resp:'mt-resp',tipo:'mt-tipo',prior:'mt-prior',estado:'mt-estado',avance:'mt-avance',dead:'mt-dead',desc:'mt-desc',presupuesto:'mt-piezas-presupuesto',emailCompras:'mt-piezas-email',emailResp:'mt-recep-email'},
+  etiquetas:{titulo:'título',activoId:'activo',resp:'responsable',tipo:'tipo',prior:'prioridad',estado:'estado',avance:'avance',dead:'fecha límite',desc:'descripción',presupuesto:'presupuesto',emailCompras:'correo de compras',emailResp:'correo de quien entrega'},
+  ocultos:{presupuesto:'mt-piezas-form',emailCompras:'mt-piezas-form',emailResp:'mt-recep-datos'},
+  extras:['mt-motivo','mt-reap-motivo','mt-piezas-desc','mt-piezas-urgencia'],
+  fijos:()=>({codigo:document.getElementById('mt-id').value}),
+  anterior:()=>{ const id=document.getElementById('mt-id').value; return id ? (tickets.find(x=>x.codigo===id)||null) : null; },
+  abierto:()=>document.getElementById('modal-ticket').classList.contains('open')});
+fvRegistrar('mmant',{hoja:'mantenimiento',
+  campos:{desc:'mm-desc',costo:'mm-costo',fecha:'mm-fecha',emailResp:'mm-email-resp',emailCompras:'mm-piezas-email',presupuesto:'mm-piezas-presupuesto'},
+  etiquetas:{desc:'descripción',costo:'costo',fecha:'fecha',emailResp:'correo del responsable',emailCompras:'correo de compras',presupuesto:'presupuesto'},
+  ocultos:{emailCompras:'mob-piezas-form',presupuesto:'mob-piezas-form'},
+  abierto:()=>document.getElementById('modal-mant').classList.contains('open')});
+fvRegistrar('mactivo',{hoja:'activos',
+  campos:{nombre:'mob-ea-nombre',tipo:'mob-ea-tipo',estado:'mob-ea-estado',marca:'mob-ea-marca',modelo:'mob-ea-modelo',serial:'mob-ea-serial',ubicacion:'mob-ea-ubicacion',depto:'mob-ea-depto',valor:'mob-ea-valor',obs:'mob-ea-obs'},
+  etiquetas:{nombre:'nombre',tipo:'tipo',estado:'estado',marca:'marca',modelo:'modelo',serial:'serie',ubicacion:'ubicación',depto:'departamento',valor:'valor',obs:'observaciones'},
+  fijos:()=>({codigo:(document.getElementById('mob-modal-activo')||{})._editCodigo||''}),
+  anterior:()=>{ const c=(document.getElementById('mob-modal-activo')||{})._editCodigo; return c ? (activos.find(x=>x.codigo===c)||null) : null; },
+  abierto:()=>document.getElementById('mob-modal-activo').classList.contains('open')});
+
+// Reapertura de un ticket cerrado: pide el motivo
+function _mtActualizarReapertura(){
+  const wrap=document.getElementById('mt-reap-wrap'); if(!wrap) return;
+  const id=document.getElementById('mt-id').value;
+  const t=id ? tickets.find(x=>x.codigo===id) : null;
+  const reabre=!!(t && t.estado==='cerrado' && document.getElementById('mt-estado').value!=='cerrado');
+  wrap.style.display = reabre ? 'block' : 'none';
+  if(!reabre){ document.getElementById('mt-reap-motivo').value=''; _fvMarcar('mt-reap-motivo',''); }
+}
+
 /* v10: mensajes de errores nuevos del servidor */
 const _MSG_ERR_SERVIDOR={
   HISTORIAL_INVALIDO:'El historial del registro no es válido. Recarga la pantalla e intenta de nuevo.',
@@ -1398,7 +1691,9 @@ const _MSG_ERR_SERVIDOR={
   TERMINOS_PENDIENTES:'Debes aceptar los Términos de Uso y el Aviso de Privacidad antes de continuar.',
   VERSION_TERMINOS_INVALIDA:'La versión de los términos cambió. Cierra la sesión y vuelve a entrar para ver la vigente.',
   HISTORIAL_GUARDADO_DANADO:'El historial de este registro está dañado; avisa al administrador.',
-  HISTORIAL_LLENO:'El historial de este registro llegó a su límite; avisa al administrador.'
+  HISTORIAL_LLENO:'El historial de este registro llegó a su límite; avisa al administrador.',
+  VALIDACION:'Revisa los campos marcados.',
+  CONSENTIMIENTO_REQUERIDO:'Debes aceptar el Aviso de Privacidad para enviar el reporte.'
 };
 function _msgServidor(res,pordefecto){ return (res&&_MSG_ERR_SERVIDOR[res.error]) || (res&&(res.message||res.error)) || pordefecto || 'sin respuesta'; }
 async function apiPostAsync(sheet, action, payload, timeoutMs=60000){
@@ -1440,6 +1735,7 @@ async function _versionTerminosMobile(){
   try{
     const r=await fetch(API+"?action=config&t="+Date.now(),{mode:"cors"});
     const d=await r.json();
+    _fvRecibirConfig(d);
     if(d && d.ok && d.terminosVersion) _terminosVerMob=String(d.terminosVersion);
   }catch(e){}
   return _terminosVerMob;
@@ -1492,6 +1788,7 @@ async function cargarNombreInstitucion(){
   try{
     const r = await fetch(API+"?action=config&t="+Date.now(), {mode:"cors"});
     const d = await r.json();
+    _fvRecibirConfig(d);
     const nombre = (d && d.ok && d.nombreInstitucion) ? d.nombreInstitucion : '';
     if(el) el.textContent = nombre;
   }catch(e){ }
@@ -1676,6 +1973,7 @@ async function _cargarDatosSecundariosMobile(){
 }
 async function initApp(){
   cargarNombreInstitucion();
+  _fvCargarEsquemas(); // R2: reglas de validación del servidor (no bloquea la carga)
   const safetyTimer = setTimeout(()=>{
     console.warn("Timeout de seguridad activado");
     document.getElementById("splash").classList.add("hide");
@@ -2014,7 +2312,7 @@ function _marcaGuardadoMob(o, tipo){
   if(o._errGuardado){
     const c=_jsArg(o.codigo);
     return '<div class="marca-error" style="margin-top:6px;font-size:11px;font-weight:700;color:#991B1B">⚠ No se guardó · '
-      +'<button onclick="reintentarGuardadoMob(\''+tipo+'\',\''+c+'\',event)" style="background:#991B1B;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer">Reintentar</button> '
+      +'<button onclick="reintentarGuardadoMob(\''+tipo+'\',\''+c+'\',event)" style="background:#991B1B;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer">'+((_borradoresMob.get(tipo+':'+o.codigo)||{}).validacion?'Corregir':'Reintentar')+'</button> '
       +'<button onclick="descartarGuardadoMob(\''+tipo+'\',\''+c+'\',event)" style="background:#E5E7EB;color:#374151;border:none;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer">Descartar</button></div>';
   }
   return '';
@@ -2532,7 +2830,7 @@ function openNuevoTicket(){
   document.getElementById("mt-motivo-wrap").style.display="none";
   document.getElementById("mt-save-btn").textContent="Crear ticket";
   const sel=document.getElementById("mt-activo");
-  sel.innerHTML='<option value="">— Sin activo —</option>'+activos.filter(a=>a.estado!=="eliminado").map(a=>`<option value="${_escHtml(a.codigo)}">${_escHtml(a.codigo)} — ${_escHtml(a.nombre)}</option>`).join("");
+  sel.innerHTML='<option value="">— Sin activo —</option>'+activos.filter(a=>a.estado!=="eliminado"&&!a._guardando&&!a._temporal&&!a._errGuardado).map(a=>`<option value="${_escHtml(a.codigo)}">${_escHtml(a.codigo)} — ${_escHtml(a.nombre)}</option>`).join("");
   _mtActualizarBloqueRecepcion();
   const respSel=document.getElementById("mt-resp");
   if(respSel){
@@ -2571,7 +2869,7 @@ function openEditTicket(codigo){
   document.getElementById("mt-motivo").value="";
   document.getElementById("mt-save-btn").textContent="Guardar cambios";
   const sel=document.getElementById("mt-activo");
-  sel.innerHTML='<option value="">— Sin activo —</option>'+activos.filter(a=>a.estado!=="eliminado").map(a=>`<option value="${_escHtml(a.codigo)}">${_escHtml(a.codigo)} — ${_escHtml(a.nombre)}</option>`).join("");
+  sel.innerHTML='<option value="">— Sin activo —</option>'+activos.filter(a=>a.estado!=="eliminado"&&!a._guardando&&!a._temporal&&!a._errGuardado).map(a=>`<option value="${_escHtml(a.codigo)}">${_escHtml(a.codigo)} — ${_escHtml(a.nombre)}</option>`).join("");
   sel.value=t.activoId||"";
   _mtActualizarBloqueRecepcion();
   _mtActualizarBloqueDevolucion();
@@ -2726,6 +3024,8 @@ function ocultarGuardandoMob(){
    el borrador (con el mismo _opId) se conserva en memoria. */
 async function saveTicket(){
   if(window._savingTicket){ showToast('El ticket se está guardando, espera...',''); return; }
+  if(!fvTodo('mticket')) return; // R2: reglas del servidor (esquemas)
+  const _borMT = fvBorrador('mticket');
   const titulo=document.getElementById("mt-titulo").value.trim();
   if(!titulo){showToast("El título es obligatorio","error");return;}
   const solicitudPiezas = _leerSolicitudPiezasTicket();
@@ -2734,6 +3034,21 @@ async function saveTicket(){
   const isEdit=editId!=="";
   if(isEdit && !document.getElementById("mt-motivo").value.trim()){
     showToast("El motivo es obligatorio","error");return;
+  }
+  // Reapertura: un ticket cerrado que vuelve a abierto/en progreso pide el motivo
+  let motivoReap="";
+  if(isEdit){
+    const _tR=tickets.find(x=>x.codigo===editId);
+    if(_tR && _tR.estado==="cerrado" && document.getElementById("mt-estado").value!=="cerrado"){
+      motivoReap=document.getElementById("mt-reap-motivo").value.trim();
+      if(motivoReap.length<5){
+        _mtActualizarReapertura();
+        _fvMarcar("mt-reap-motivo","Indica el motivo de la reapertura (mínimo 5 caracteres).");
+        showToast("Falta el motivo de la reapertura.","error");
+        document.getElementById("mt-reap-motivo").focus();
+        return;
+      }
+    }
   }
   window._savingTicket = true;
   const btnGuardar = document.getElementById("mt-save-btn");
@@ -2773,6 +3088,13 @@ async function saveTicket(){
       desc: 'Motivo: '+motivo+'.'+(eventosM.length?' | '+eventosM.join(' · '):''),
       fecha:ts(), usuario:session.nombre, color:colorM
     });
+    if(motivoReap){
+      t.historial.push({
+        tipo:'Reapertura', desc:'Reabierto por '+session.nombre+': '+motivoReap,
+        motivo:motivoReap, estadoAnterior:estadoAntes, estadoNuevo:t.estado,
+        fecha:ts(), usuario:session.nombre, color:'amber'
+      });
+    }
     const recepE = _mtLeerRecepcion();
     if(recepE && !t.activoId){
       t.historial.push({
@@ -2792,7 +3114,7 @@ async function saveTicket(){
     const payload=_payloadMob(t,{_fotosQuitar:_mtFotosQuitar.slice(), _opId:_generarOpId()});
     _mtFotosQuitar=[];
     t._guardando=true; delete t._errGuardado;
-    _borradoresMob.set('tkt:'+t.codigo,{tipo:'edit',codigo:t.codigo,payload,prev,estadoAntes,motivo,solicitudPiezas});
+    _borradoresMob.set('tkt:'+t.codigo,{tipo:'edit',codigo:t.codigo,payload,prev,estadoAntes,motivo,solicitudPiezas,fvClave:'mticket',bor:_borMT});
     closeModal();
     renderTickets(); renderDashboard();
     _enviarTicketMob(t.codigo);
@@ -2813,7 +3135,7 @@ async function saveTicket(){
   const payload=_payloadMob(t,{_opId:_generarOpId()});
   t._guardando=true; t._temporal=true;
   tickets.push(t);
-  _borradoresMob.set('tkt:'+code,{tipo:'insert',codigo:code,payload,solicitudPiezas,recepM,aId,titulo,respSelected,codigosAntes});
+  _borradoresMob.set('tkt:'+code,{tipo:'insert',codigo:code,payload,solicitudPiezas,recepM,aId,titulo,respSelected,codigosAntes,fvClave:'mticket',bor:_borMT});
   closeModal();
   renderTickets(); renderDashboard();
   _enviarTicketMob(code);
@@ -2826,8 +3148,38 @@ async function saveTicket(){
 }
 function _marcarErrorGuardadoMob(o, res, quien){
   delete o._guardando; o._errGuardado = true;
+  // R2: el servidor rechazó datos (VALIDACION): se vuelve al formulario con lo escrito y los campos marcados
+  let _vTipo=null;
+  if(res && res.error==='VALIDACION'){
+    _vTipo = _borradoresMob.has('tkt:'+o.codigo) ? 'tkt' : (_borradoresMob.has('act:'+o.codigo) ? 'act' : null);
+    const _w = _vTipo ? _borradoresMob.get(_vTipo+':'+o.codigo) : null;
+    if(_w && _w.fvClave) _w.validacion = res.campos || {}; else _vTipo=null;
+  }
   if(typeof renderTickets==='function') { renderTickets(); renderDashboard(); renderActivos(); }
-  showToast('⚠ No se guardó '+quien+': '+String(_msgServidor(res,'sin respuesta')).replace(/[.\s]+$/,'')+'. Toca «Reintentar» en la tarjeta.','error',5000);
+  showToast('⚠ No se guardó '+quien+': '+String(_msgServidor(res,'sin respuesta')).replace(/[.\s]+$/,'')+'. Toca «'+(_vTipo?'Corregir':'Reintentar')+'» en la tarjeta.','error',5000);
+  if(_vTipo) _reabrirMobPorValidacion(_vTipo, o.codigo, true);
+}
+/* R2: reabre el formulario con el borrador y marca los campos que el servidor rechazó. */
+function _reabrirMobPorValidacion(tipo, codigo, auto){
+  const k=tipo+':'+codigo, w=_borradoresMob.get(k);
+  if(!w || !w.validacion || !w.fvClave) return;
+  if(auto && document.querySelector('#modal-ticket.open,#mob-modal-activo.open,#modal-mant.open,#ticket-sheet.open')) return;
+  _borradoresMob.delete(k);
+  const lista = tipo==='tkt' ? tickets : activos;
+  const i = lista.findIndex(x=>x.codigo===codigo);
+  if(i>=0){ if(w.prev) lista[i]=w.prev; else lista.splice(i,1); }
+  saveCache(); renderTickets(); renderDashboard(); renderActivos(); updateBadge();
+  try{
+    if(w.fvClave==='mticket'){
+      if(w.tipo==='edit') openEditTicket(codigo); else openNuevoTicket();
+      try{ _mtFotosQuitar=(w.payload._fotosQuitar||[]).slice(); _renderGaleriaFotosMobile(JSON.parse(w.payload.fotos||'[]'), false); }catch(e){}
+    }else if(w.fvClave==='mactivo'){
+      if(w.tipo==='edit') openEditActivoSheet(codigo); else abrirNuevoActivoMobile();
+    }else if(w.fvClave==='mmant'){
+      activoDetalle = w.prev; openMantActivo();
+    }
+  }catch(e){ showToast('No se pudo reabrir el formulario.','error'); return; }
+  setTimeout(()=>{ fvLlenar(w.fvClave, w.bor); fvAplicarServidor(w.fvClave, w.validacion); },250);
 }
 /* Segundo plano: envía el ticket (alta o edición) y muestra el resultado real. */
 async function _enviarTicketMob(codigo){
@@ -2941,6 +3293,7 @@ async function _enviarTicketMob(codigo){
 function closeModal(){
   document.getElementById("modal-overlay").classList.remove("open");
   document.getElementById("modal-ticket").classList.remove("open");
+  try{ fvLimpiar("mticket"); const w=document.getElementById("mt-reap-wrap"); if(w) w.style.display="none"; }catch(e){}
 }
 function renderActivos(){
   const list=document.getElementById("activos-list");
@@ -3049,6 +3402,7 @@ function openEditActivoSheet(codigo){
   document.getElementById('mob-ea-marca').value  = a.marca||'';
   document.getElementById('mob-ea-modelo').value = a.modelo||'';
   document.getElementById('mob-ea-serial').value = a.serial||'';
+  document.getElementById('mob-ea-valor').value  = a.valor||'';
   document.getElementById('mob-ea-obs').value    = a.obs||'';
   document.getElementById('mob-ea-foto').value   = '';
   const selDep = document.getElementById('mob-ea-depto');
@@ -3117,6 +3471,8 @@ async function saveMant(){
   const a=activoDetalle;
   if(a._guardando){ showToast('Este activo aún se está guardando. Espera un momento.',''); return; }
   if(_bloqueadoPorPendienteMob(a)) return;
+  if(!fvTodo('mmant')) return; // R2
+  const _borMM = fvBorrador('mmant');
   const desc=document.getElementById("mm-desc").value.trim();
   if(!desc){showToast("La descripción es obligatoria","error");return;}
   const emailResp=(document.getElementById("mm-email-resp")?.value||"").trim();
@@ -3145,7 +3501,7 @@ async function saveMant(){
     if(evPiezas) a.historial.push(evPiezas);
     const payload=_payloadMob(a,{_opId:_generarOpId()});
     a._guardando=true; delete a._errGuardado;
-    _borradoresMob.set('act:'+a.codigo,{tipo:'mant',codigo:a.codigo,payload,prev,
+    _borradoresMob.set('act:'+a.codigo,{tipo:'mant',codigo:a.codigo,payload,prev,fvClave:'mmant',bor:_borMM,
       aud:{accion:"CREAR",tipo:"Mantenimiento",detalle:`${e.tipo}: ${e.desc}${necesitaPiezas?" | Solicitud de compra":""} | App Móvil`},
       okMsg:"Mantenimiento registrado"+(necesitaPiezas?" + solicitud de compra":"")+" ✓"});
     ["mm-desc","mm-fecha","mm-costo","mm-email-resp","mm-piezas-desc","mm-piezas-email","mm-piezas-presupuesto"].forEach(id=>{const el=document.getElementById(id);if(el)el.value="";});
@@ -3202,6 +3558,7 @@ function reintentarGuardadoMob(tipo, codigo, ev){
   const lista = tipo==='tkt' ? tickets : activos;
   const o = lista.find(x=>x.codigo===codigo); if(!o) return;
   if(!_borradoresMob.has(tipo+':'+codigo)){ showToast('No hay borrador para reintentar.','error'); return; }
+  if((_borradoresMob.get(tipo+':'+codigo)||{}).validacion){ _reabrirMobPorValidacion(tipo,codigo,false); return; }
   delete o._errGuardado; o._guardando = true;
   renderTickets(); renderDashboard(); renderActivos();
   if(tipo==='tkt') _enviarTicketMob(codigo); else _enviarActivoMob(codigo);
@@ -3223,6 +3580,7 @@ function descartarGuardadoMob(tipo, codigo, ev){
 function closeMant(){
   document.getElementById("mant-overlay").classList.remove("open");
   document.getElementById("modal-mant").classList.remove("open");
+  try{ fvLimpiar("mmant"); }catch(e){}
 }
 function renderReportes(){
   const misTkt=tickets.filter(t=>esMiTicket(t)&&t.estado!=="eliminado");
@@ -3434,8 +3792,8 @@ window.addEventListener("offline",()=>{
   setSyncStatus(false);
 });
 if("serviceWorker" in navigator){
-  navigator.serviceWorker.register("sw.js?v=4.3").then(reg=>{
-    console.log("[SAGAE] SW registrado v4.3:", reg.scope);
+  navigator.serviceWorker.register("sw.js?v=4.4").then(reg=>{
+    console.log("[SAGAE] SW registrado v4.4:", reg.scope);
     reg.addEventListener("updatefound", ()=>{
       const newWorker = reg.installing;
       if(!newWorker) return;
@@ -3660,7 +4018,7 @@ function abrirNuevoActivoMobile(){
   modal._editCodigo = null;
   document.getElementById('mob-modal-activo-title').textContent = 'Nuevo activo';
   document.getElementById('mob-btn-guardar-activo').textContent = '💾 Guardar activo';
-  ['mob-ea-nombre','mob-ea-modelo','mob-ea-serial','mob-ea-obs','mob-ea-foto'].forEach(id=>{
+  ['mob-ea-nombre','mob-ea-modelo','mob-ea-serial','mob-ea-valor','mob-ea-obs','mob-ea-foto'].forEach(id=>{
     const el=document.getElementById(id); if(el) el.value='';
   });
   document.getElementById('mob-ea-tipo').value='Laptop';
@@ -3720,8 +4078,11 @@ function cerrarNuevoActivoMobile(){
   if(modal){ modal.classList.remove('open'); modal._editCodigo=null; }
   const overlay=document.getElementById('mob-activo-overlay');
   if(overlay) overlay.classList.remove('open');
+  try{ fvLimpiar('mactivo'); }catch(e){}
 }
 async function guardarNuevoActivoMobile(){
+  if(!fvTodo('mactivo')) return; // R2: reglas del servidor (esquemas)
+  const _borMA = fvBorrador('mactivo');
   const nombre = (document.getElementById('mob-ea-nombre')?.value||'').trim();
   if(!nombre){ showMobToast('El nombre es obligatorio'); return; }
   const btn = document.getElementById('mob-btn-guardar-activo');
@@ -3815,6 +4176,7 @@ async function guardarNuevoActivoMobile(){
     const payload = {
       codigo:    editCodigo || '',
       nombre,
+      valor:     (()=>{ const v=parseFloat(document.getElementById('mob-ea-valor')?.value); return isNaN(v) ? (existente?.valor||0) : v; })(),
       tipo:      document.getElementById('mob-ea-tipo')?.value||'Laptop',
       estado:    document.getElementById('mob-ea-estado')?.value||'activo',
       marca:     (document.getElementById('mob-ea-marca')?.value||'').trim()||'—',
@@ -3850,13 +4212,13 @@ async function guardarNuevoActivoMobile(){
       Object.assign(existente, payload);
       existente._guardando = true; delete existente._errGuardado;
       claveLocal = editCodigo;
-      _borradoresMob.set('act:'+claveLocal,{tipo:'edit',codigo:claveLocal,payload:envio,prev,
+      _borradoresMob.set('act:'+claveLocal,{tipo:'edit',codigo:claveLocal,payload:envio,prev,fvClave:'mactivo',bor:_borMA,
         aud:{accion:'EDITAR',tipo:'Activo',detalle:`Editado desde app móvil${eventosEdicion[0]?.tipo==='Reasignación'?' (reasignación de responsable)':''}`},
         okMsg:'✅ Activo actualizado correctamente'});
     }else{
       claveLocal = 'tmp-'+_generarOpId();
-      activos.push({...payload, codigo:claveLocal, id:claveLocal, valor:0, vida:3, _guardando:true, _temporal:true});
-      _borradoresMob.set('act:'+claveLocal,{tipo:'insert',codigo:claveLocal,payload:envio,codigosAntes:_antesCods,
+      activos.push({...payload, codigo:claveLocal, id:claveLocal, vida:3, _guardando:true, _temporal:true});
+      _borradoresMob.set('act:'+claveLocal,{tipo:'insert',codigo:claveLocal,payload:envio,codigosAntes:_antesCods,fvClave:'mactivo',bor:_borMA,
         aud:{accion:'CREAR',tipo:'Activo',detalle:`Registrado desde app móvil: ${nombre}`},
         okMsg:'✅ Activo registrado correctamente'});
     }

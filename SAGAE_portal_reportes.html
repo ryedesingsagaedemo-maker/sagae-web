@@ -519,6 +519,8 @@ function _mensajeCrearTicket(data){
   if(c==='PORTAL_SATURADO') return (data.message ? String(data.message).slice(0,200) : 'El portal recibió muchos reportes en esta hora. Intenta de nuevo en unos minutos.');
   if(c==='RATE_LIMIT_GLOBAL') return 'El sistema está recibiendo muchos reportes en este momento. Intenta de nuevo en unos minutos.';
   if(c==='RECAPTCHA_RECHAZADO') return 'No pudimos verificar el envío. Recarga la página e inténtalo de nuevo.';
+  if(c==='CONSENTIMIENTO_REQUERIDO') return 'Debes aceptar el Aviso de Privacidad para enviar el reporte. Recarga la página e inténtalo de nuevo.';
+  if(c==='VALIDACION') return 'Revisa los campos del formulario e inténtalo de nuevo.';
   return (data && data.message) ? String(data.message).slice(0,200) : 'No se pudo enviar el reporte. Intenta de nuevo en unos minutos.';
 }
 function _esCorreoUnico(c){ return /^[^\s@,;<>()]+@[^\s@,;<>()]+\.[^\s@,;<>()]+$/.test(c) && c.length<=120; }
@@ -590,7 +592,8 @@ async function enviarReporte(){
       website:(document.getElementById("f-website")||{}).value||"",
       recaptchaToken: await _tokenRecaptcha(),
       anonimo: anonimo,
-      aceptaPrivacidad: true,
+      aceptaAviso: true,          // v12 (E7): el servidor exige aceptaAviso + versionAviso y deja constancia en el historial
+      aceptaPrivacidad: true,     // compatibilidad con el servidor v11
       versionAviso: AVISO_PRIVACIDAD_VERSION,
       declaraMayorEdad: !anonimo
     };
