@@ -812,13 +812,14 @@ tr.gd-pend .gd-marca,.k-card.gd-pend .gd-marca{pointer-events:auto;}
       <div style="font-size:12px;color:#334155;margin-bottom:8px"><b>2.</b> Escanea este código con la app (o ábrelo directo si estás en el mismo teléfono):</div>
       <div id="enr2fa-qr" style="display:flex;justify-content:center;margin:8px 0"></div>
       <div id="enr2fa-link" style="text-align:center;margin-bottom:8px"></div>
+      <div id="enr2fa-etiqueta" style="font-size:11.5px;color:#334155;text-align:center;margin-bottom:8px;background:#f1f5f9;border-radius:8px;padding:6px 8px"></div>
       <div style="font-size:11px;color:#64748b;text-align:center;margin-bottom:12px">¿No puedes escanear? Escribe esta clave en la app:<br><strong id="enr2fa-secret" style="font-family:monospace;letter-spacing:1px;font-size:13px;color:#0B1B30"></strong></div>
       <div style="font-size:12px;color:#334155;margin-bottom:6px"><b>3.</b> Escribe el código de 6 dígitos que muestra la app:</div>
       <div style="text-align:center"><input id="enr2fa-codigo" maxlength="6" inputmode="numeric" autocomplete="one-time-code" placeholder="000000" style="letter-spacing:4px;font-size:20px;text-align:center;width:180px;padding:8px;border:1.5px solid #cbd5e1;border-radius:8px"></div>
       <div id="enr2fa-err" style="display:none;color:#b91c1c;font-size:12px;text-align:center;margin-top:8px"></div>
       <div style="display:flex;gap:8px;justify-content:center;margin-top:14px">
         <button class="btn" onclick="enr2faSalir()">Cerrar sesión</button>
-        <button class="btn btn-p" onclick="enr2faConfirmar()">Activar</button>
+        <button class="btn btn-p" id="enr2fa-btn-activar" onclick="enr2faConfirmar()">Activar</button>
       </div>
     </div>
     <div id="enr2fa-ok" style="display:none;text-align:center">
@@ -4051,6 +4052,34 @@ function _render2FASeccion_(activo){
   }
 }
 
+// ── 2FA: etiqueta con fecha y mensajes claros (v4.6) ──
+// Cada inicio de sesión sin 2FA genera una clave nueva en el servidor; para que la app de verificación no junte
+// varias entradas iguales, la etiqueta lleva la fecha y hora. Solo se reescribe la ruta de la URL otpauth.
+function _etiqueta2FA_(username){
+  const d=new Date(), M=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  const dos=n=>String(n).padStart(2,'0');
+  return {usuario:String(username||''), fecha:dos(d.getDate())+'-'+M[d.getMonth()]+' '+dos(d.getHours())+':'+dos(d.getMinutes())};
+}
+function _otpauthConEtiqueta_(url, et){
+  const m=/^(otpauth:\/\/totp\/)([^?]*)(\?.*)?$/.exec(String(url||''));
+  if(!m) return '';
+  const nueva=m[1]+encodeURIComponent('SAGAE:'+et.usuario+' '+et.fecha)+(m[3]||'');
+  return /^otpauth:\/\/totp\//.test(nueva)?nueva:'';
+}
+function _textoEtiqueta2FA_(et){ return 'SAGAE · '+et.usuario+' '+et.fecha; }
+function _textoBajoQR2FA_(et){ return 'En tu app aparecerá como: '+_textoEtiqueta2FA_(et)+'. Si ya tienes entradas anteriores de SAGAE para este usuario, bórralas: solo sirve esta.'; }
+// ENROLAR_2FA: el servidor lo devuelve cuando la sesión restringida fue reemplazada por otro inicio de sesión del mismo usuario.
+// Devuelve {tipo, texto}: tipo = 'invalido' | 'expirado' | 'sesion' | 'servidor' | 'bloqueado' | 'otro'
+function _msg2FAError_(resp, et){
+  const e=(resp&&resp.error)||'';
+  if(e==='INVALID_TOTP') return {tipo:'invalido', texto:'El código no coincide con este código QR. Usa la entrada «'+(et?_textoEtiqueta2FA_(et):'SAGAE')+'» de tu app (la más nueva) y borra las anteriores. Si es la correcta, revisa que la hora del teléfono sea automática.'};
+  if(e==='TOTP_EXPIRADO') return {tipo:'expirado', texto:'Este código QR ya no sirve (venció o se inició sesión con este usuario en otro lugar). Se generó uno nuevo: borra la entrada anterior de tu app y escanea este.'};
+  if(e==='SESSION_INVALID' || e==='SESSION_EXPIRED' || e==='NO_SESSION' || e==='ENROLAR_2FA') return {tipo:'sesion', texto:'Se inició sesión con este usuario en otro lugar y esta pantalla quedó cerrada. Vuelve a iniciar sesión en UN solo lugar y escanea el código nuevo.'};
+  if(e==='TIMEOUT' || e==='BUSY' || e==='NETWORK') return {tipo:'servidor', texto:'El servidor no respondió a tiempo. Intenta de nuevo.'};
+  if(e==='BLOCKED') return {tipo:'bloqueado', texto:(resp&&resp.message)||'Demasiados intentos. Espera 15 minutos e intenta de nuevo.'};
+  return {tipo:'otro', texto:'No se pudo activar ('+(e||'sin código')+'). Intenta de nuevo.'};
+}
+
 let _2faCambio = false; // true = la cuenta ya tiene 2FA y se está cambiando de teléfono (pide contraseña)
 async function iniciarActivacion2FA(cambio){
   _2faCambio = (cambio===true);
@@ -4062,12 +4091,16 @@ async function iniciarActivacion2FA(cambio){
     _render2FASeccion_(_2faCambio);
     return;
   }
-  _2faPendiente = resp; // {secret, otpauthUrl} — todavía no está guardado en el servidor
+  const _et = _etiqueta2FA_(session.username);
+  const _urlOtp = _otpauthConEtiqueta_(resp.otpauthUrl, _et);
+  if(!_urlOtp){ showToast('⚠ No se pudo generar el código. Intenta de nuevo.','error'); _render2FASeccion_(_2faCambio); return; }
+  _2faPendiente = {secret:resp.secret, otpauthUrl:_urlOtp, etiqueta:_et}; // todavía no está guardado en el servidor
   el.innerHTML = `
     <div style="font-size:12px;color:var(--text2);margin-bottom:10px">
       1. Abre tu app de verificación (Google Authenticator u otra) y escanea este código:
     </div>
     <div id="qr-2fa" style="display:flex;justify-content:center;margin-bottom:10px;background:#fff;padding:10px;border-radius:var(--r-md);border:1px solid var(--border);width:fit-content"></div>
+    <div id="qr-2fa-etiqueta" style="font-size:11.5px;color:var(--text2);margin-bottom:8px;max-width:340px"></div>
     <div style="font-size:11px;color:var(--text3);margin-bottom:14px;text-align:center">
       ¿No puedes escanear? Ingresa este código manualmente en tu app:<br>
       <strong style="font-family:monospace;letter-spacing:1px;font-size:13px;color:var(--text)">${_escHtml(resp.secret)}</strong>
@@ -4080,8 +4113,9 @@ async function iniciarActivacion2FA(cambio){
       <button class="btn btn-p" onclick="confirmarActivacion2FA()">Confirmar y activar</button>
     </div>`;
   if(typeof QRCode !== 'undefined'){
-    new QRCode(document.getElementById('qr-2fa'), {text: resp.otpauthUrl, width:160, height:160});
+    new QRCode(document.getElementById('qr-2fa'), {text: _urlOtp, width:160, height:160});
   }
+  document.getElementById('qr-2fa-etiqueta').textContent = _textoBajoQR2FA_(_et);
 }
 
 async function confirmarActivacion2FA(){
@@ -4100,14 +4134,23 @@ async function confirmarActivacion2FA(){
     _2faPendiente = null;
     showToast('✅ Verificación en dos pasos activada','success');
     _render2FASeccion_(true);
-  }else if(resp && resp.error==='TOTP_EXPIRADO'){
-    _2faPendiente = null;
-    _render2FASeccion_(_2faCambio);
-    showToast('⚠ El código QR expiró. Genera uno nuevo.','error');
-  }else if(resp && (resp.error==='PASSWORD_ACTUAL_INCORRECTA' || resp.error==='BLOCKED')){
+  }else if(resp && resp.error==='PASSWORD_ACTUAL_INCORRECTA'){
     showToast('⚠ '+_msgPass2FA(resp),'error');
   }else{
-    showToast('⚠ Código incorrecto, intenta de nuevo','error');
+    const m = _msg2FAError_(resp, _2faPendiente&&_2faPendiente.etiqueta);
+    if(m.tipo==='expirado'){
+      _2faPendiente = null;
+      await iniciarActivacion2FA(_2faCambio);   // genera un código nuevo
+      showToast('⚠ '+m.texto,'error');
+    }else if(m.tipo==='sesion'){
+      _2faPendiente = null;
+      const el = document.getElementById('perfil-2fa-content');
+      el.innerHTML = '<div style="font-size:12px;color:var(--red);margin-bottom:10px" id="perfil-2fa-sesion-msg"></div><button class="btn btn-p" onclick="enr2faSalir()">Volver a iniciar sesión</button>';
+      document.getElementById('perfil-2fa-sesion-msg').textContent = m.texto;
+      showToast('⚠ '+m.texto,'error');
+    }else{
+      showToast('⚠ '+m.texto,'error');
+    }
   }
 }
 
@@ -4120,13 +4163,16 @@ async function _mostrarEnrolar2FA(){
   const err=document.getElementById('enr2fa-err'); err.style.display='none';
   const resp = await apiPostAsync(null,'totp_generar',{});
   if(!resp || !resp.ok || !resp.secret){ err.textContent='No se pudo preparar el código. Cierra sesión e intenta de nuevo.'; err.style.display='block'; return; }
-  _enr2fa = { secret: resp.secret };
+  const et=_etiqueta2FA_(session&&session.username);
+  const urlOtp=_otpauthConEtiqueta_(resp.otpauthUrl, et);
+  _enr2fa = { secret: resp.secret, etiqueta: et };
   document.getElementById('enr2fa-secret').textContent = resp.secret;
+  document.getElementById('enr2fa-etiqueta').textContent = _textoBajoQR2FA_(et);
   const qr=document.getElementById('enr2fa-qr'); qr.innerHTML='';
-  if(typeof QRCode !== 'undefined'){ new QRCode(qr, {text: resp.otpauthUrl, width:160, height:160}); }
+  if(urlOtp && typeof QRCode !== 'undefined'){ new QRCode(qr, {text: urlOtp, width:160, height:160}); }
   const a=document.getElementById('enr2fa-link'); a.innerHTML='';
-  if(/^otpauth:\/\/totp\//.test(resp.otpauthUrl||'')){
-    const l=document.createElement('a'); l.href=resp.otpauthUrl; l.textContent='Abrir en mi app de verificación'; l.style.cssText='font-size:12px;color:#1f3a63'; a.appendChild(l);
+  if(urlOtp){
+    const l=document.createElement('a'); l.href=urlOtp; l.textContent='Abrir en mi app de verificación'; l.style.cssText='font-size:12px;color:#1f3a63'; a.appendChild(l);
   }
   setTimeout(()=>document.getElementById('enr2fa-codigo')?.focus(),100);
 }
@@ -4139,12 +4185,19 @@ async function enr2faConfirmar(){
     _enr2fa=null; session=null;
     document.getElementById('enr2fa-paso1').style.display='none';
     document.getElementById('enr2fa-ok').style.display='block';
-  }else if(resp && resp.error==='TOTP_EXPIRADO'){
-    _enr2fa=null; document.getElementById('enr2fa-codigo').value='';
-    await _mostrarEnrolar2FA();   // genera un código nuevo
-    err.textContent='El código QR expiró. Se generó uno nuevo: escanéalo otra vez.'; err.style.display='block';
   }else{
-    err.textContent='El código no coincide. Revisa la hora de tu teléfono e intenta de nuevo.'; err.style.display='block';
+    const m=_msg2FAError_(resp, _enr2fa&&_enr2fa.etiqueta);
+    if(m.tipo==='expirado'){
+      _enr2fa=null; document.getElementById('enr2fa-codigo').value='';
+      await _mostrarEnrolar2FA();   // genera un código nuevo
+    }
+    err.textContent=m.texto; err.style.display='block';
+    if(m.tipo==='sesion'){
+      _enr2fa=null;
+      const b=document.createElement('button'); b.className='btn btn-p'; b.style.cssText='display:block;margin:8px auto 0'; b.textContent='Volver a iniciar sesión'; b.onclick=enr2faSalir;
+      err.appendChild(b);
+      const ba=document.getElementById('enr2fa-btn-activar'); if(ba) ba.disabled=true;
+    }
   }
 }
 function enr2faSalir(){

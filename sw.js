@@ -1,5 +1,6 @@
 // ════════════════════════════════════════════════════════════════════
-// SAGAE — Service Worker v4.5
+// SAGAE — Service Worker v4.6
+// v4.6: activación del 2FA con mensajes claros y etiqueta con fecha.
 // v4.5: tanda R3 "varios tecnicos a la vez": version por registro, conflictos con resolucion y sondeos incrementales (desde/hasta).
 // Sistema de Activos y Gestión Administrativa Educativa
 // Desarrollado por RYE Design
@@ -8,8 +9,8 @@
 // v4.4: tanda R2 "datos validos": validacion en pantalla con los esquemas del servidor (mensaje bajo cada campo), reapertura de tickets con motivo, importacion con filas rechazadas.
 // v4.3: tanda R1 "sin pantalla en blanco": guardado optimista de tickets/activos/mobiliario, barra Sincronizando, esqueleto de carga, session_check pausado con la pestana oculta.
 // v4.2: pantallas del servidor v10.3 (2FA pide contrasena al desactivar/cambiar telefono; fotos sin permiso).
-const CACHE_NAME   = 'sagae-mobile-v4.5';
-const CACHE_STATIC = 'sagae-static-v4.5';
+const CACHE_NAME   = 'sagae-mobile-v4.6';
+const CACHE_STATIC = 'sagae-static-v4.6';
 
 // Recursos a cachear para funcionamiento offline
 // (Corrección histórica v1.7: antes apuntaba a index.html —panel de
@@ -139,7 +140,7 @@ const OPTIONAL_ASSETS = [
 
 // ── INSTALL — cachear recursos estáticos ─────────────────────────
 self.addEventListener('install', event => {
-  console.log('[SAGAE SW] Instalando v4.5...');
+  console.log('[SAGAE SW] Instalando v4.6...');
   event.waitUntil(
     caches.open(CACHE_STATIC).then(cache => {
       return cache.addAll(STATIC_ASSETS).catch(err => {
@@ -156,7 +157,7 @@ self.addEventListener('install', event => {
 
 // ── ACTIVATE — limpiar caches viejos ─────────────────────────────
 self.addEventListener('activate', event => {
-  console.log('[SAGAE SW] Activando v4.5...');
+  console.log('[SAGAE SW] Activando v4.6...');
   event.waitUntil(
     caches.keys().then(cacheNames => {
       return Promise.all(
@@ -279,4 +280,4 @@ self.addEventListener('message', event => {
   }
 });
 
-console.log('[SAGAE SW] Service Worker v4.5 cargado correctamente');
+console.log('[SAGAE SW] Service Worker v4.6 cargado correctamente');
